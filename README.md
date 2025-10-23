@@ -1,2 +1,2 @@
 # taskd
-A Distributed Task Schedule System
+A Distributed Task Scheduler
