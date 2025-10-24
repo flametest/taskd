@@ -14,3 +14,8 @@ type TaskRepository interface {
 type taskRepositoryImpl struct {
 	db *gorm.DB
 }
+
+func (t taskRepositoryImpl) Create(ctx context.Context, task *model.Task) error {
+	//TODO implement me
+	panic("implement me")
+}
