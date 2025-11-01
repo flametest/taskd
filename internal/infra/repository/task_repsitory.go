@@ -15,7 +15,10 @@ type taskRepositoryImpl struct {
 	db *gorm.DB
 }
 
-func (t taskRepositoryImpl) Create(ctx context.Context, task *model.Task) error {
-	//TODO implement me
-	panic("implement me")
+func NewTaskRepository(db *gorm.DB) TaskRepository {
+	return &taskRepositoryImpl{db: db}
+}
+
+func (t *taskRepositoryImpl) Create(ctx context.Context, task *model.Task) error {
+	return t.db.WithContext(ctx).Create(task).Error
 }

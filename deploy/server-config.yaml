@@ -1,0 +1,4 @@
+AppConfig:
+  name: taskd
+  addr: 127.0.0.1
+  env: dev
