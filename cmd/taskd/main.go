@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/flametest/taskd/internal/config"
+	"github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vserver"
 )
 
@@ -29,6 +29,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	log.InitLogger(cfg.AppConfig.Name, cfg.LogLevel)
+	log.Info().Msg("starting taskd")
 	srv, err := vserver.NewEchoServer(ctx, &cfg.AppConfig)
 	if err != nil {
 		panic(err)
@@ -40,12 +42,12 @@ func main() {
 
 	<-ctx.Done()
 
-	fmt.Println("shutting down gracefully...")
+	log.Info().Msg("shutting down gracefully...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		fmt.Println("Server forced to shutdown: ", err)
+		log.Fatal().Err(err).Msg("Server forced to shutdown")
 	}
-	fmt.Println("Server exiting")
+	log.Info().Msg("Server exiting")
 }
