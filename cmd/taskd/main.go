@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/flametest/taskd/internal/api"
 	"github.com/flametest/taskd/internal/config"
 	"github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vserver"
@@ -35,7 +36,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
+	srv.Register(api.Router)
 	go func() {
 		_ = srv.Start(ctx)
 	}()

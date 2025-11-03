@@ -3,7 +3,8 @@ module github.com/flametest/taskd
 go 1.25.1
 
 require (
-	github.com/flametest/vita v0.0.0-20251102151227-b143bf64fc19
+	github.com/flametest/vita v0.0.0-20251103140804-da9b1421fc07
+	github.com/labstack/echo/v4 v4.13.4
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
 	gorm.io/datatypes v1.2.7
@@ -32,7 +33,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/labstack/echo/v4 v4.13.4 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
