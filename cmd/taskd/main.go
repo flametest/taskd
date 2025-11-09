@@ -36,7 +36,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	srv.Register(api.Router)
+	app := api.NewApp()
+	srv.Register(app.Router)
 	go func() {
 		_ = srv.Start(ctx)
 	}()
