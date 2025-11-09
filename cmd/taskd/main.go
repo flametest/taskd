@@ -9,6 +9,7 @@ import (
 
 	"github.com/flametest/taskd/internal/api"
 	"github.com/flametest/taskd/internal/config"
+	"github.com/flametest/taskd/internal/container"
 	"github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vserver"
 )
@@ -36,7 +37,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	app := api.NewApp()
+	c, err := container.NewContainer(cfg)
+	if err != nil {
+		panic(err)
+	}
+	app := api.NewApp(c)
 	srv.Register(app.Router)
 	go func() {
 		_ = srv.Start(ctx)

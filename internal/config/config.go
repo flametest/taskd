@@ -1,14 +1,16 @@
 package config
 
 import (
+	"github.com/flametest/vita/vgorm"
 	"github.com/flametest/vita/vserver"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	AppConfig vserver.EchoServerConfig `json:"app_config" yaml:"AppConfig"`
-	LogLevel  zerolog.Level            `json:"log_level" yaml:"LogLevel"`
+	AppConfig  vserver.EchoServerConfig `json:"app_config" yaml:"AppConfig"`
+	LogLevel   zerolog.Level            `json:"log_level" yaml:"LogLevel"`
+	Datasource *vgorm.Config            `json:"datasource" yaml:"Datasource"`
 }
 
 func ParseConfig(path string) (*Config, error) {
