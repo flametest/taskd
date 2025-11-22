@@ -1,0 +1,21 @@
+CREATE TABLE tasks (
+   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+   version BIGINT UNSIGNED NOT NULL,
+   name VARCHAR(255) NOT NULL,
+   task_id BIGINT UNSIGNED NOT NULL,
+   protocol ENUM('http', 'https', 'grpc') NOT NULL,
+   address VARCHAR(500) NOT NULL,
+   params JSON,
+   exec_time DATETIME NOT NULL,
+   status ENUM('scheduled', 'running', 'succeeded', 'failed') NOT NULL,
+   attempts BIGINT UNSIGNED NOT NULL DEFAULT 0,
+   max_retries BIGINT UNSIGNED NOT NULL,
+   last_error TEXT,
+   created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ON UPDATE CURRENT_TIMESTAMP,
+   INDEX idx_created_at (created_at),
+   INDEX idx_updated_at (updated_at),
+   INDEX idx_task_id (task_id),
+   INDEX idx_status (status),
+   INDEX idx_exec_time (exec_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
