@@ -3,7 +3,7 @@ module github.com/flametest/taskd
 go 1.25.1
 
 require (
-	github.com/flametest/vita v0.0.0-20251122123547-6fc0cbed9a79
+	github.com/flametest/vita v0.0.0-20251123060439-0721b2f6e1b7
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0

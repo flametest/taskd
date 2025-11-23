@@ -1,7 +1,23 @@
 package handler
 
-import "github.com/labstack/echo/v4"
+import (
+	"net/http"
+
+	"github.com/flametest/taskd/pkg/dto"
+	"github.com/flametest/vita/verrors"
+	"github.com/labstack/echo/v4"
+)
 
 func (t *TaskHandler) CreateTasks(c echo.Context) error {
-	return nil
+	req := &dto.CreatTaskReq{}
+	binder := echo.DefaultBinder{}
+	err := binder.BindBody(c, &req.Body)
+	if err != nil {
+		return verrors.BadRequestError(err.Error())
+	}
+	task, err := t.taskService.CreateTask(c.Request().Context(), req)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, task)
 }
