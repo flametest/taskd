@@ -7,11 +7,10 @@ type CreatTaskReq struct {
 }
 
 type CreateTaskReqBody struct {
-	Name     string        `json:"name"`
-	TaskId   string        `json:"task_id"`
-	Protocol enum.Protocol `json:"protocol"`
-	Address  string        `json:"address"`
-	Params   interface{}   `json:"params"`
-	ExecTime int64         `json:"exec_time"`
-	Retries  int           `json:"retries"`
+	Name       string                 `json:"name"`
+	Protocol   enum.Protocol          `json:"protocol"`
+	Address    string                 `json:"address"`
+	Params     map[string]interface{} `json:"params"`
+	ExecTime   int64                  `json:"exec_time"`
+	MaxRetries int                    `json:"max_retries"`
 }

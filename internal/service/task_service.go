@@ -27,6 +27,13 @@ func (t *taskServiceImpl) GetTaskById(ctx context.Context, id uint) (*domain.Tas
 }
 
 func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error) {
-	//TODO implement me
-	panic("implement me")
+	task := domain.NewTask(req.Body.Name, req.Body.Protocol, req.Body.Address, req.Body.Params, req.Body.ExecTime,
+		req.Body.MaxRetries)
+	taskDO := task.ToDO()
+	err := t.container.GetRepository().GetTaskRepo().Create(ctx, taskDO)
+	if err != nil {
+		return nil, err
+	}
+	task.SetId(taskDO.Id)
+	return task, nil
 }

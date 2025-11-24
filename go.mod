@@ -3,7 +3,8 @@ module github.com/flametest/taskd
 go 1.25.1
 
 require (
-	github.com/flametest/vita v0.0.0-20251123060439-0721b2f6e1b7
+	github.com/flametest/vita v0.0.0-20251123133811-ad60f5f2b5a5
+	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
@@ -28,7 +29,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.6 // indirect
