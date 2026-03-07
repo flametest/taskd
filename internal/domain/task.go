@@ -2,10 +2,12 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
 	"github.com/flametest/taskd/internal/infra/model"
+	log "github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vtool"
 	"github.com/google/uuid"
 )
@@ -46,6 +48,35 @@ func NewTask(name string, protocol enum.Protocol, address string, params map[str
 func (t *Task) SetId(id uint64) *Task {
 	t.Id = id
 	return t
+}
+
+func NewFromDO(do *model.Task) *Task {
+	var params map[string]interface{}
+	if do.Params != nil {
+		err := json.Unmarshal(do.Params, &params)
+		if err != nil {
+			log.Panic("error unmarshalling params: ", err)
+		}
+	}
+
+	var lastError error
+	if do.LastError != "" {
+		lastError = fmt.Errorf("%s", do.LastError)
+	}
+
+	return &Task{
+		Id:         do.Id,
+		Name:       do.Name,
+		TaskId:     do.TaskId,
+		Protocol:   do.Protocol,
+		Address:    do.Address,
+		Params:     params,
+		ExecTime:   vtool.Ptr(do.ExecTime),
+		status:     do.Status,
+		Attempts:   do.Attempts,
+		MaxRetries: do.MaxRetries,
+		LastError:  lastError,
+	}
 }
 
 func (t *Task) ToDO() *model.Task {

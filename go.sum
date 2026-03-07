@@ -14,6 +14,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/flametest/vita v0.0.0-20251123133811-ad60f5f2b5a5 h1:eWuo3dMidxZdcThgEbqRI4BcxwpMoBWIhlip7j3HHEk=
 github.com/flametest/vita v0.0.0-20251123133811-ad60f5f2b5a5/go.mod h1:vqt9WRMj69lvDygUr+4PjIaI6G6ahdxqoO3JlFe1W68=
+github.com/flametest/vita v0.0.0-20251126135346-287bb6eaa9ad h1:R/rXKRlArygDBvTCtE4yoEPNdLnDB8lq2lrRFxhriAc=
+github.com/flametest/vita v0.0.0-20251126135346-287bb6eaa9ad/go.mod h1:vqt9WRMj69lvDygUr+4PjIaI6G6ahdxqoO3JlFe1W68=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=

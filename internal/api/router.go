@@ -21,5 +21,6 @@ func (a *App) Router(server vserver.Server) vserver.Server {
 	taskService := service.NewTaskService(a.Container)
 	taskHandler := handler.NewTaskHandler(taskService)
 	e.Add("POST", "/v1/tasks", taskHandler.CreateTasks)
+	e.Add("GET", "/v1/tasks/:id", taskHandler.GetTaskById)
 	return srv
 }
