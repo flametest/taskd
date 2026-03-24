@@ -10,6 +10,7 @@ import (
 	"github.com/flametest/taskd/internal/api"
 	"github.com/flametest/taskd/internal/config"
 	"github.com/flametest/taskd/internal/container"
+	"github.com/flametest/vita/verrors"
 	"github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vserver"
 )
@@ -31,6 +32,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	verrors.Initialize(cfg.AppConfig.Name)
 	log.InitLogger(cfg.AppConfig.Name, cfg.LogLevel)
 	log.Info().Msg("starting taskd")
 	srv, err := vserver.NewEchoServer(ctx, &cfg.AppConfig)

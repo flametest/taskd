@@ -7,9 +7,9 @@ type CreatTaskReq struct {
 }
 
 type CreateTaskReqBody struct {
-	Name       string                 `json:"name"`
+	Name       string                 `json:"name" validate:"required,max=255"`
 	Protocol   enum.Protocol          `json:"protocol"`
-	Address    string                 `json:"address"`
+	Address    string                 `json:"address" validate:"required,max=500"`
 	Params     map[string]interface{} `json:"params"`
 	ExecTime   int64                  `json:"exec_time"`
 	MaxRetries int                    `json:"max_retries"`
