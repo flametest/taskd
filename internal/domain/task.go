@@ -55,7 +55,7 @@ func NewFromDO(do *model.Task) *Task {
 	if do.Params != nil {
 		err := json.Unmarshal(do.Params, &params)
 		if err != nil {
-			log.Panic("error unmarshalling params: ", err)
+			log.Panic().Msgf("error unmarshalling params: %v", err)
 		}
 	}
 
