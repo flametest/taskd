@@ -4,13 +4,14 @@ import (
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
+	"github.com/flametest/vita/vgorm"
 	"gorm.io/datatypes"
 )
 
 type Task struct {
-	Base
+	vgorm.BasePostgres
 	Name        string         `gorm:"column:name"`
-	TaskId      string         `gorm:"column:task_id"`
+	RefId       string         `gorm:"column:ref_id"`
 	Protocol    enum.Protocol  `gorm:"column:protocol"`
 	Address     string         `gorm:"column:address"`
 	Params      datatypes.JSON `gorm:"column:params"`

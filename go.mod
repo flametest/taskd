@@ -3,13 +3,12 @@ module github.com/flametest/taskd
 go 1.25.1
 
 require (
-	github.com/flametest/vita v0.0.0-20260411135315-21b28ad39a28
+	github.com/flametest/vita v0.0.0-20260625161549-d5ecbe955b9f
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/spf13/viper v1.21.0
 	gorm.io/datatypes v1.2.7
-	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -75,4 +74,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
+	gorm.io/driver/sqlite v1.6.0 // indirect
+	gorm.io/plugin/optimisticlock v1.1.3 // indirect
 )

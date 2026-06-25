@@ -30,7 +30,7 @@ type TaskRepository interface {
 	// MarkSucceeded flips a task from 'claimed' to 'succeeded'. It returns
 	// ConflictError (rows affected 0) if the task is not in 'claimed' state,
 	// guarding against double-fire and stale rows.
-	MarkSucceeded(ctx context.Context, taskId uint64) error
+	MarkSucceeded(ctx context.Context, taskId string) error
 }
 
 type taskRepositoryImpl struct {
@@ -91,7 +91,7 @@ func (t *taskRepositoryImpl) Claim(ctx context.Context, now time.Time, lookahead
 
 		// Step 2: flip status + record lease on the locked rows. Map form so GORM
 		// writes every column (no zero-value skipping).
-		ids := make([]uint64, 0, len(claimed))
+		ids := make([]string, 0, len(claimed))
 		for _, c := range claimed {
 			ids = append(ids, c.Id)
 		}
@@ -119,7 +119,7 @@ func (t *taskRepositoryImpl) Claim(ctx context.Context, now time.Time, lookahead
 
 // MarkSucceeded is guarded by status='claimed'; a no-op row (already
 // succeeded/failed/stale) yields ConflictError.
-func (t *taskRepositoryImpl) MarkSucceeded(ctx context.Context, taskId uint64) error {
+func (t *taskRepositoryImpl) MarkSucceeded(ctx context.Context, taskId string) error {
 	res := t.db.WithContext(ctx).
 		Model(&model.Task{}).
 		Where("id = ? AND status = ?", taskId, enum.TaskStatusClaimed).
@@ -128,7 +128,7 @@ func (t *taskRepositoryImpl) MarkSucceeded(ctx context.Context, taskId uint64) e
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return verrors.ConflictError(fmt.Sprintf("task %d not in claimed state", taskId))
+		return verrors.ConflictError(fmt.Sprintf("task %s not in claimed state", taskId))
 	}
 	return nil
 }

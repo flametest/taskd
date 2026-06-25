@@ -30,7 +30,7 @@ func (t *taskServiceImpl) GetTaskById(ctx context.Context, id uint64) (*domain.T
 }
 
 func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error) {
-	task := domain.NewTask(req.Body.Name, req.Body.Protocol, req.Body.Address, req.Body.Params, req.Body.ExecTime,
+	task := domain.NewTask(req.Body.Name, req.Body.RefId, req.Body.Protocol, req.Body.Address, req.Body.Params, req.Body.ExecTime,
 		req.Body.MaxRetries)
 	taskDO := task.ToDO()
 	err := t.container.GetRepository().GetTaskRepo().Create(ctx, taskDO)

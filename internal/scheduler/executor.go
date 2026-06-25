@@ -25,7 +25,7 @@ func NewNoopExecutor() *NoopExecutor { return &NoopExecutor{} }
 
 func (NoopExecutor) Execute(ctx context.Context, task *domain.Task) error {
 	log.Info().
-		Any("task_id", task.TaskId).
+		Any("task_id", task.Id).
 		Any("name", task.Name).
 		Any("protocol", task.Protocol.String()).
 		Any("address", task.Address).

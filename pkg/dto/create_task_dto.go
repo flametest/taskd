@@ -8,6 +8,7 @@ type CreatTaskReq struct {
 
 type CreateTaskReqBody struct {
 	Name       string                 `json:"name" validate:"required,max=255"`
+	RefId      string                 `json:"ref_id" validate:"required,max=255"`
 	Protocol   enum.Protocol          `json:"protocol"`
 	Address    string                 `json:"address" validate:"required,max=500"`
 	Params     map[string]interface{} `json:"params"`

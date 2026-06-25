@@ -13,6 +13,7 @@ import (
 	"github.com/flametest/taskd/internal/domain"
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/timingwheel"
+	"github.com/flametest/vita/vgorm"
 	log "github.com/flametest/vita/vlog"
 )
 
@@ -29,7 +30,7 @@ func TestMain(m *testing.M) {
 // rows to claimed; claimFn overrides that for specialized tests.
 type fakeRepo struct {
 	mu        sync.Mutex
-	tasks     map[uint64]*model.Task
+	tasks     map[string]*model.Task
 	succCalls int
 	claimErr  error
 	succErr   error
@@ -37,7 +38,7 @@ type fakeRepo struct {
 }
 
 func newFakeRepo(tasks ...*model.Task) *fakeRepo {
-	m := make(map[uint64]*model.Task, len(tasks))
+	m := make(map[string]*model.Task, len(tasks))
 	for _, t := range tasks {
 		m[t.Id] = t
 	}
@@ -69,7 +70,7 @@ func (f *fakeRepo) Claim(ctx context.Context, now time.Time, lookahead time.Dura
 	return out, nil
 }
 
-func (f *fakeRepo) MarkSucceeded(ctx context.Context, taskId uint64) error {
+func (f *fakeRepo) MarkSucceeded(ctx context.Context, taskId string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.succErr != nil {
@@ -105,7 +106,7 @@ func (r *recordingExecutor) Execute(ctx context.Context, task *domain.Task) erro
 	if r.delay > 0 {
 		time.Sleep(r.delay)
 	}
-	r.ch <- task.TaskId
+	r.ch <- task.Id
 	return r.err
 }
 
@@ -141,16 +142,16 @@ func testCfg() SchedulerConfig {
 	return cfg
 }
 
-func newScheduledTask(id uint64, execTime time.Time) *model.Task {
+func newScheduledTask(id string, execTime time.Time) *model.Task {
 	return &model.Task{
-		Base:       model.Base{Id: id},
-		TaskId:     fmt.Sprintf("task-%d", id),
-		Name:       "test",
-		Protocol:   enum.ProtocolHTTP,
-		Address:    "http://x",
-		ExecTime:   execTime,
-		Status:     enum.TaskStatusScheduled,
-		MaxRetries: 3,
+		BasePostgres: vgorm.BasePostgres{Id: id},
+		RefId:        fmt.Sprintf("task-%s", id),
+		Name:         "test",
+		Protocol:     enum.ProtocolHTTP,
+		Address:      "http://x",
+		ExecTime:     execTime,
+		Status:       enum.TaskStatusScheduled,
+		MaxRetries:   3,
 	}
 }
 
@@ -204,7 +205,7 @@ func TestScheduler_StopBeforeStart(t *testing.T) {
 }
 
 func TestScheduler_ClaimedTask_FiresAndSucceeds(t *testing.T) {
-	task := newScheduledTask(1, time.Now().Add(20*time.Millisecond))
+	task := newScheduledTask("1", time.Now().Add(20*time.Millisecond))
 	repo := newFakeRepo(task)
 	rec := newRecordingExecutor()
 	s, cancel := startScheduler(t, testCfg(), repo, rec)
@@ -217,7 +218,7 @@ func TestScheduler_ClaimedTask_FiresAndSucceeds(t *testing.T) {
 }
 
 func TestScheduler_PastTask_FiresImmediately(t *testing.T) {
-	task := newScheduledTask(1, time.Now().Add(-1*time.Second))
+	task := newScheduledTask("1", time.Now().Add(-1*time.Second))
 	repo := newFakeRepo(task)
 	rec := newRecordingExecutor()
 	s, cancel := startScheduler(t, testCfg(), repo, rec)
@@ -227,7 +228,7 @@ func TestScheduler_PastTask_FiresImmediately(t *testing.T) {
 }
 
 func TestScheduler_FutureTask_NotFiredEarly(t *testing.T) {
-	task := newScheduledTask(1, time.Now().Add(1*time.Second))
+	task := newScheduledTask("1", time.Now().Add(1*time.Second))
 	repo := newFakeRepo(task)
 	rec := newRecordingExecutor()
 	cfg := testCfg()
@@ -247,7 +248,7 @@ func TestScheduler_FutureTask_NotFiredEarly(t *testing.T) {
 func TestScheduler_LookaheadPreClaims(t *testing.T) {
 	// exec_time is 50ms out, but LookaheadWindow (100ms) covers it -> claimed on
 	// the first scan, then fires ~50ms later.
-	task := newScheduledTask(1, time.Now().Add(50*time.Millisecond))
+	task := newScheduledTask("1", time.Now().Add(50*time.Millisecond))
 	repo := newFakeRepo(task)
 	rec := newRecordingExecutor()
 	s, cancel := startScheduler(t, testCfg(), repo, rec)
@@ -259,10 +260,10 @@ func TestScheduler_LookaheadPreClaims(t *testing.T) {
 func TestScheduler_WorkerPool_Parallelism(t *testing.T) {
 	now := time.Now()
 	tasks := []*model.Task{
-		newScheduledTask(1, now),
-		newScheduledTask(2, now),
-		newScheduledTask(3, now),
-		newScheduledTask(4, now),
+		newScheduledTask("1", now),
+		newScheduledTask("2", now),
+		newScheduledTask("3", now),
+		newScheduledTask("4", now),
 	}
 	repo := newFakeRepo(tasks...)
 	rec := newRecordingExecutor()
@@ -283,7 +284,7 @@ func TestScheduler_WorkerPool_Parallelism(t *testing.T) {
 }
 
 func TestScheduler_ExecutorError_NoMarkSucceeded(t *testing.T) {
-	task := newScheduledTask(1, time.Now().Add(50*time.Millisecond))
+	task := newScheduledTask("1", time.Now().Add(50*time.Millisecond))
 	repo := newFakeRepo(task)
 	rec := newRecordingExecutor()
 	rec.err = errors.New("boom")
@@ -298,8 +299,8 @@ func TestScheduler_ExecutorError_NoMarkSucceeded(t *testing.T) {
 }
 
 func TestScheduler_ExecutorPanic_WorkerSurvives(t *testing.T) {
-	task1 := newScheduledTask(1, time.Now().Add(10*time.Millisecond))
-	task2 := newScheduledTask(2, time.Now().Add(10*time.Millisecond))
+	task1 := newScheduledTask("1", time.Now().Add(10*time.Millisecond))
+	task2 := newScheduledTask("2", time.Now().Add(10*time.Millisecond))
 	repo := newFakeRepo(task1, task2)
 	s, cancel := startScheduler(t, testCfg(), repo, panicExecutor{})
 	time.Sleep(250 * time.Millisecond) // let both fire and panic-recover
@@ -314,7 +315,7 @@ func TestScheduler_DuplicateWheelKey_NoDoubleFireBeforeExpiry(t *testing.T) {
 	// claimFn returns the same task on every scan without flipping status, so the
 	// second and later wheel.Add calls for the same key are rejected with
 	// ErrKeyExists. The task must not fire multiple times before its exec_time.
-	task := newScheduledTask(1, time.Now().Add(500*time.Millisecond))
+	task := newScheduledTask("1", time.Now().Add(500*time.Millisecond))
 	repo := newFakeRepo(task)
 	repo.claimFn = func(now time.Time, lookahead time.Duration, batch int, lease time.Duration) ([]*model.Task, error) {
 		return []*model.Task{task}, nil
@@ -332,7 +333,7 @@ func TestScheduler_DuplicateWheelKey_NoDoubleFireBeforeExpiry(t *testing.T) {
 }
 
 func TestScheduler_GracefulShutdown_DrainsInflight(t *testing.T) {
-	task := newScheduledTask(1, time.Now().Add(10*time.Millisecond))
+	task := newScheduledTask("1", time.Now().Add(10*time.Millisecond))
 	repo := newFakeRepo(task)
 	exec := &blockingExecutor{
 		started: make(chan struct{}, 1),

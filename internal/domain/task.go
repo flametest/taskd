@@ -8,15 +8,15 @@ import (
 	"github.com/flametest/taskd/internal/constant/enum"
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/vita/verrors"
+	"github.com/flametest/vita/vgorm"
 	log "github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vtool"
-	"github.com/google/uuid"
 )
 
 type Task struct {
-	Id          uint64
+	Id          string
 	Name        string
-	TaskId      string
+	RefId       string
 	Protocol    enum.Protocol
 	Address     string
 	Params      map[string]interface{}
@@ -28,14 +28,14 @@ type Task struct {
 	LockedUntil *time.Time
 }
 
-func NewTask(name string, protocol enum.Protocol, address string, params map[string]interface{}, execTime int64,
+func NewTask(name, refId string, protocol enum.Protocol, address string, params map[string]interface{}, execTime int64,
 	maxRetries int) *Task {
 	if maxRetries == 0 {
 		maxRetries = 5
 	}
 	return &Task{
 		Name:       name,
-		TaskId:     uuid.New().String(),
+		RefId:      refId,
 		Protocol:   protocol,
 		Address:    address,
 		Params:     params,
@@ -47,7 +47,7 @@ func NewTask(name string, protocol enum.Protocol, address string, params map[str
 	}
 }
 
-func (t *Task) SetId(id uint64) *Task {
+func (t *Task) SetId(id string) *Task {
 	t.Id = id
 	return t
 }
@@ -56,7 +56,7 @@ func (t *Task) SetId(id uint64) *Task {
 // expiry. It is an error to claim a task that is not 'scheduled'.
 func (t *Task) Claim(until time.Time) error {
 	if t.status != enum.TaskStatusScheduled {
-		return verrors.ConflictError(fmt.Sprintf("task %s not scheduled (current: %s)", t.TaskId, t.status))
+		return verrors.ConflictError(fmt.Sprintf("task %s not scheduled (current: %s)", t.Id, t.status))
 	}
 	t.status = enum.TaskStatusClaimed
 	t.LockedUntil = &until
@@ -66,7 +66,7 @@ func (t *Task) Claim(until time.Time) error {
 // MarkSucceeded transitions the task from 'claimed' to 'succeeded'.
 func (t *Task) MarkSucceeded() error {
 	if t.status != enum.TaskStatusClaimed {
-		return verrors.ConflictError(fmt.Sprintf("task %s not claimed (current: %s)", t.TaskId, t.status))
+		return verrors.ConflictError(fmt.Sprintf("task %s not claimed (current: %s)", t.Id, t.status))
 	}
 	t.status = enum.TaskStatusSucceeded
 	return nil
@@ -92,7 +92,7 @@ func NewFromDO(do *model.Task) *Task {
 	return &Task{
 		Id:          do.Id,
 		Name:        do.Name,
-		TaskId:      do.TaskId,
+		RefId:       do.RefId,
 		Protocol:    do.Protocol,
 		Address:     do.Address,
 		Params:      params,
@@ -115,11 +115,11 @@ func (t *Task) ToDO() *model.Task {
 		return nil
 	}
 	return &model.Task{
-		Base: model.Base{
+		BasePostgres: vgorm.BasePostgres{
 			Id: t.Id,
 		},
 		Name:        t.Name,
-		TaskId:      t.TaskId,
+		RefId:       t.RefId,
 		Protocol:    t.Protocol,
 		Address:     t.Address,
 		Params:      paramsJson,

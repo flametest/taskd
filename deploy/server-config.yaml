@@ -4,13 +4,14 @@ AppConfig:
   env: dev
 LogLevel: 0
 Datasource:
-  dialect: mysql
+  dialect: postgres
   host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  database: test
-  debug: true
+  port: 5432
+  username: cos
+  password: cos
+  database: taskd
+  schema: public
+  debug: false
 Scheduler:
   ScanInterval: 1s
   LookaheadWindow: 5s

@@ -17,7 +17,7 @@ import (
 // repository.
 type taskClaimer interface {
 	Claim(ctx context.Context, now time.Time, lookahead time.Duration, batchSize int, lease time.Duration) ([]*model.Task, error)
-	MarkSucceeded(ctx context.Context, taskId uint64) error
+	MarkSucceeded(ctx context.Context, taskId string) error
 }
 
 // Scheduler claims due tasks, hands them to a TimingWheel for precise firing, and
@@ -109,15 +109,15 @@ func (s *Scheduler) scanOnce(ctx context.Context) {
 // pool non-blocking so a saturated pool never stalls the wheel.
 func (s *Scheduler) dispatch(t *model.Task, now time.Time) {
 	delay := t.ExecTime.Sub(now)
-	err := s.wheel.Add(delay, t.TaskId, func() {
+	err := s.wheel.Add(delay, t.Id, func() {
 		select {
 		case s.taskCh <- t:
 		default:
-			log.Error().Any("task_id", t.TaskId).Msg("scheduler: worker pool full, dropping task (stays claimed)")
+			log.Error().Any("task_id", t.Id).Msg("scheduler: worker pool full, dropping task (stays claimed)")
 		}
 	})
 	if err != nil {
-		log.Warn().Any("error", err).Any("task_id", t.TaskId).Msg("scheduler: wheel.Add failed")
+		log.Warn().Any("error", err).Any("task_id", t.Id).Msg("scheduler: wheel.Add failed")
 	}
 }
 
@@ -147,15 +147,15 @@ func (s *Scheduler) workerLoop() {
 func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error().Any("panic", r).Any("task_id", t.TaskId).Msg("scheduler: executor panic")
+			log.Error().Any("panic", r).Any("task_id", t.Id).Msg("scheduler: executor panic")
 		}
 	}()
 	dom := domain.NewFromDO(t)
 	if err := s.exec.Execute(context.Background(), dom); err != nil {
-		log.Error().Any("error", err).Any("task_id", t.TaskId).Msg("scheduler: execute failed (no retry this round)")
+		log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: execute failed (no retry this round)")
 		return
 	}
 	if err := s.repo.MarkSucceeded(context.Background(), t.Id); err != nil {
-		log.Error().Any("error", err).Any("task_id", t.TaskId).Msg("scheduler: mark succeeded failed")
+		log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: mark succeeded failed")
 	}
 }
