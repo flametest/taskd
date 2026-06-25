@@ -14,7 +14,7 @@ import (
 
 type TaskRepository interface {
 	Create(ctx context.Context, task *model.Task) error
-	GetTaskById(ctx context.Context, taskId uint64) (*model.Task, error)
+	GetTaskById(ctx context.Context, taskId string) (*model.Task, error)
 	// GetTasksByStatus returns up to limit tasks in the given status ordered by
 	// exec_time ascending. Mostly a test/inspection helper.
 	GetTasksByStatus(ctx context.Context, status enum.Status, limit int) ([]*model.Task, error)
@@ -45,7 +45,7 @@ func (t *taskRepositoryImpl) Create(ctx context.Context, task *model.Task) error
 	return t.db.WithContext(ctx).Create(task).Error
 }
 
-func (t *taskRepositoryImpl) GetTaskById(ctx context.Context, taskId uint64) (*model.Task, error) {
+func (t *taskRepositoryImpl) GetTaskById(ctx context.Context, taskId string) (*model.Task, error) {
 	var task model.Task
 	err := t.db.WithContext(ctx).Where("id = ?", taskId).First(&task).Error
 	if err != nil {

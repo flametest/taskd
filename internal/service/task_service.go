@@ -9,7 +9,7 @@ import (
 )
 
 type TaskService interface {
-	GetTaskById(ctx context.Context, id uint64) (*domain.Task, error)
+	GetTaskById(ctx context.Context, id string) (*domain.Task, error)
 	CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error)
 }
 
@@ -21,7 +21,7 @@ func NewTaskService(container container.Container) TaskService {
 	return &taskServiceImpl{container: container}
 }
 
-func (t *taskServiceImpl) GetTaskById(ctx context.Context, id uint64) (*domain.Task, error) {
+func (t *taskServiceImpl) GetTaskById(ctx context.Context, id string) (*domain.Task, error) {
 	taskDO, err := t.container.GetRepository().GetTaskRepo().GetTaskById(ctx, id)
 	if err != nil {
 		return nil, err
