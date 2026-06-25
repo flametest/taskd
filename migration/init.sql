@@ -7,15 +7,18 @@ CREATE TABLE task (
    address VARCHAR(500) NOT NULL,
    params JSON,
    exec_time DATETIME NOT NULL,
-   status ENUM('scheduled', 'running', 'succeeded', 'failed') NOT NULL,
+   status ENUM('scheduled', 'claimed', 'running', 'succeeded', 'failed', 'dead') NOT NULL,
    attempts BIGINT UNSIGNED NOT NULL DEFAULT 0,
    max_retries BIGINT UNSIGNED NOT NULL,
    last_error TEXT,
+   locked_until DATETIME DEFAULT NULL,
    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ON UPDATE CURRENT_TIMESTAMP,
    INDEX idx_created_at (created_at),
    INDEX idx_updated_at (updated_at),
    UNIQUE INDEX uidx_task_id (task_id),
    INDEX idx_status (status),
-   INDEX idx_exec_time (exec_time)
+   INDEX idx_exec_time (exec_time),
+   INDEX idx_claim (status, exec_time),
+   INDEX idx_locked_until (locked_until)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

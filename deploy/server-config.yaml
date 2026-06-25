@@ -11,3 +11,13 @@ Datasource:
   password: root
   database: test
   debug: true
+Scheduler:
+  ScanInterval: 1s
+  LookaheadWindow: 5s
+  BatchSize: 100
+  LeaseDuration: 30s
+  WorkerConcurrency: 8
+  InstanceID: ""
+  TickInterval: 100ms
+  SlotsPerLevel: 256
+  MaxLevels: 4

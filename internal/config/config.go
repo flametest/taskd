@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/flametest/taskd/internal/scheduler"
 	"github.com/flametest/vita/vgorm"
 	log "github.com/flametest/vita/vlog"
 	"github.com/flametest/vita/vserver"
@@ -8,9 +9,10 @@ import (
 )
 
 type Config struct {
-	AppConfig  vserver.EchoServerConfig `json:"app_config" yaml:"AppConfig"`
-	LogLevel   log.Level                `json:"log_level" yaml:"LogLevel"`
-	Datasource *vgorm.Config            `json:"datasource" yaml:"Datasource"`
+	AppConfig  vserver.EchoServerConfig   `json:"app_config" yaml:"AppConfig"`
+	LogLevel   log.Level                  `json:"log_level" yaml:"LogLevel"`
+	Datasource *vgorm.Config              `json:"datasource" yaml:"Datasource"`
+	Scheduler  *scheduler.SchedulerConfig `json:"scheduler" yaml:"Scheduler"`
 }
 
 func ParseConfig(path string) (*Config, error) {
