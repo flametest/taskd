@@ -18,6 +18,8 @@ import (
 type taskClaimer interface {
 	Claim(ctx context.Context, now time.Time, lookahead time.Duration, batchSize int, lease time.Duration) ([]*model.Task, error)
 	MarkSucceeded(ctx context.Context, taskId string) error
+	MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error)
+	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
 }
 
 // Scheduler claims due tasks, hands them to a TimingWheel for precise firing, and
@@ -29,9 +31,10 @@ type Scheduler struct {
 	wheel timingwheel.TimingWheel
 	exec  Executor
 
-	taskCh chan *model.Task
-	wg     sync.WaitGroup
-	scanWG sync.WaitGroup
+	taskCh   chan *model.Task
+	wg       sync.WaitGroup
+	scanWG   sync.WaitGroup
+	reaperWG sync.WaitGroup
 
 	started atomic.Bool
 	stopCh  chan struct{}
@@ -62,6 +65,36 @@ func (s *Scheduler) Start(ctx context.Context) {
 	}
 	s.scanWG.Add(1)
 	go s.scanLoop(ctx)
+	s.reaperWG.Add(1)
+	go s.reaperLoop(ctx)
+}
+
+// reaperLoop periodically reclaims tasks whose lease has expired.
+func (s *Scheduler) reaperLoop(ctx context.Context) {
+	defer s.reaperWG.Done()
+	ticker := time.NewTicker(s.cfg.ReaperInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.reapOnce(ctx)
+		}
+	}
+}
+
+func (s *Scheduler) reapOnce(ctx context.Context) {
+	n, err := s.repo.ReclaimOrphans(ctx, time.Now())
+	if err != nil {
+		log.Error().Any("error", err).Msg("scheduler: reap failed")
+		return
+	}
+	if n > 0 {
+		log.Info().Any("reclaimed", n).Msg("scheduler: reclaimed orphaned tasks")
+	}
 }
 
 // Stop shuts the scheduler down: stops claiming, stops the wheel (no new fires),
@@ -73,6 +106,7 @@ func (s *Scheduler) Stop() {
 	}
 	close(s.stopCh)
 	s.scanWG.Wait()
+	s.reaperWG.Wait()
 	s.wheel.Stop()
 	s.wg.Wait()
 }
@@ -152,9 +186,14 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	}()
 	dom := domain.NewFromDO(t)
 	if err := s.exec.Execute(context.Background(), dom); err != nil {
-		log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: execute failed (no retry this round)")
+		log.Info().Any("task_id", t.Id).Any("attempts", t.Attempts).Any("error", err.Error()).Msg("scheduler: execute failed, will retry/dead")
+		next := time.Now().Add(exponentialBackoff(t.Attempts, s.cfg.BackoffBase, s.cfg.BackoffMaxInterval))
+		if _, ferr := s.repo.MarkFailure(context.Background(), t.Id, err.Error(), next); ferr != nil {
+			log.Error().Any("error", ferr).Any("task_id", t.Id).Msg("scheduler: mark failure failed")
+		}
 		return
 	}
+	log.Info().Any("task_id", t.Id).Msg("scheduler: execute succeeded")
 	if err := s.repo.MarkSucceeded(context.Background(), t.Id); err != nil {
 		log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: mark succeeded failed")
 	}

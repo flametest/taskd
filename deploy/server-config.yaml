@@ -22,3 +22,7 @@ Scheduler:
   TickInterval: 100ms
   SlotsPerLevel: 256
   MaxLevels: 4
+  HTTPTimeout: 10s
+  BackoffBase: 1s
+  BackoffMaxInterval: 5m
+  ReaperInterval: 5s

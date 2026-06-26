@@ -19,18 +19,30 @@ type SchedulerConfig struct {
 	TickInterval  time.Duration `json:"tick_interval" yaml:"TickInterval"`
 	SlotsPerLevel int           `json:"slots_per_level" yaml:"SlotsPerLevel"`
 	MaxLevels     int           `json:"max_levels" yaml:"MaxLevels"`
+
+	// HTTPTimeout bounds each HTTP executor call.
+	HTTPTimeout time.Duration `json:"http_timeout" yaml:"HTTPTimeout"`
+	// BackoffBase and BackoffMaxInterval bound the exponential retry backoff.
+	BackoffBase        time.Duration `json:"backoff_base" yaml:"BackoffBase"`
+	BackoffMaxInterval time.Duration `json:"backoff_max_interval" yaml:"BackoffMaxInterval"`
+	// ReaperInterval is how often the lease-reaper scans for orphaned claimed tasks.
+	ReaperInterval time.Duration `json:"reaper_interval" yaml:"ReaperInterval"`
 }
 
 func defaultSchedulerConfig() SchedulerConfig {
 	return SchedulerConfig{
-		ScanInterval:      1 * time.Second,
-		LookaheadWindow:   5 * time.Second,
-		BatchSize:         100,
-		LeaseDuration:     30 * time.Second,
-		WorkerConcurrency: 8,
-		TickInterval:      100 * time.Millisecond,
-		SlotsPerLevel:     256,
-		MaxLevels:         4,
+		ScanInterval:       1 * time.Second,
+		LookaheadWindow:    5 * time.Second,
+		BatchSize:          100,
+		LeaseDuration:      30 * time.Second,
+		WorkerConcurrency:  8,
+		TickInterval:       100 * time.Millisecond,
+		SlotsPerLevel:      256,
+		MaxLevels:          4,
+		HTTPTimeout:        10 * time.Second,
+		BackoffBase:        1 * time.Second,
+		BackoffMaxInterval: 5 * time.Minute,
+		ReaperInterval:     5 * time.Second,
 	}
 }
 
@@ -62,6 +74,18 @@ func ResolveSchedulerConfig(in SchedulerConfig) SchedulerConfig {
 	}
 	if in.MaxLevels < 1 {
 		in.MaxLevels = d.MaxLevels
+	}
+	if in.HTTPTimeout <= 0 {
+		in.HTTPTimeout = d.HTTPTimeout
+	}
+	if in.BackoffBase <= 0 {
+		in.BackoffBase = d.BackoffBase
+	}
+	if in.BackoffMaxInterval <= 0 {
+		in.BackoffMaxInterval = d.BackoffMaxInterval
+	}
+	if in.ReaperInterval <= 0 {
+		in.ReaperInterval = d.ReaperInterval
 	}
 	if in.InstanceID == "" {
 		host, _ := os.Hostname()

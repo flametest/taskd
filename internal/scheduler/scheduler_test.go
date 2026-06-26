@@ -91,6 +91,42 @@ func (f *fakeRepo) succCount() int {
 	return f.succCalls
 }
 
+// MarkFailure mirrors the repo SQL: increment attempts, store last_error, then
+// either re-schedule (attempts <= max_retries) or mark dead.
+func (f *fakeRepo) MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[taskId]
+	if !ok || t.Status != enum.TaskStatusClaimed {
+		return 0, nil
+	}
+	t.Attempts++
+	t.LastError = lastError
+	t.LockedUntil = nil
+	if t.Attempts > t.MaxRetries {
+		t.Status = enum.TaskStatusDead
+	} else {
+		t.Status = enum.TaskStatusScheduled
+		t.ExecTime = nextExecTime
+	}
+	return 1, nil
+}
+
+// ReclaimOrphans mirrors the repo SQL: reset claimed+expired-lease rows to scheduled.
+func (f *fakeRepo) ReclaimOrphans(ctx context.Context, now time.Time) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var n int64
+	for _, t := range f.tasks {
+		if t.Status == enum.TaskStatusClaimed && t.LockedUntil != nil && t.LockedUntil.Before(now) {
+			t.Status = enum.TaskStatusScheduled
+			t.LockedUntil = nil
+			n++
+		}
+	}
+	return n, nil
+}
+
 // recordingExecutor records fired task ids on a buffered channel.
 type recordingExecutor struct {
 	ch    chan string
@@ -111,6 +147,33 @@ func (r *recordingExecutor) Execute(ctx context.Context, task *domain.Task) erro
 }
 
 func (r *recordingExecutor) count() int { return len(r.ch) }
+
+// flakyExecutor fails the first failUntil executions, then succeeds. It records
+// every call on ch so waitExec can count total executions across retries.
+type flakyExecutor struct {
+	ch        chan string
+	failUntil int
+	mu        sync.Mutex
+	calls     int
+}
+
+func newFlakyExecutor(failUntil int) *flakyExecutor {
+	return &flakyExecutor{ch: make(chan string, 1024), failUntil: failUntil}
+}
+
+func (f *flakyExecutor) Execute(ctx context.Context, task *domain.Task) error {
+	f.mu.Lock()
+	f.calls++
+	n := f.calls
+	f.mu.Unlock()
+	f.ch <- task.Id
+	if n <= f.failUntil {
+		return errors.New("flaky")
+	}
+	return nil
+}
+
+func (f *flakyExecutor) count() int { return len(f.ch) }
 
 // panicExecutor always panics, to exercise worker panic isolation.
 type panicExecutor struct{}
@@ -174,16 +237,39 @@ func startScheduler(t *testing.T, cfg SchedulerConfig, repo taskClaimer, exec Ex
 	return s, cancel
 }
 
-func waitExec(t *testing.T, rec *recordingExecutor, n int, timeout time.Duration) {
+// counter is satisfied by any executor that reports how many times it has run.
+type counter interface{ count() int }
+
+func waitExec(t *testing.T, c counter, n int, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if rec.count() >= n {
+		if c.count() >= n {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("expected %d executions within %v, got %d", n, timeout, rec.count())
+	t.Fatalf("expected %d executions within %v, got %d", n, timeout, c.count())
+}
+
+// waitStatus polls the fake repo until taskId reaches the wanted status.
+func waitStatus(t *testing.T, repo *fakeRepo, taskId string, want enum.Status, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		repo.mu.Lock()
+		task, ok := repo.tasks[taskId]
+		var st enum.Status = enum.TaskStatusScheduled
+		if ok {
+			st = task.Status
+		}
+		repo.mu.Unlock()
+		if st == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("task %s did not reach %s within %v", taskId, want, timeout)
 }
 
 // --- tests ---
@@ -283,19 +369,75 @@ func TestScheduler_WorkerPool_Parallelism(t *testing.T) {
 	}
 }
 
-func TestScheduler_ExecutorError_NoMarkSucceeded(t *testing.T) {
-	task := newScheduledTask("1", time.Now().Add(50*time.Millisecond))
+func TestScheduler_ExecutorError_RetriesThenSucceeds(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.MaxRetries = 3
 	repo := newFakeRepo(task)
-	rec := newRecordingExecutor()
-	rec.err = errors.New("boom")
-	s, cancel := startScheduler(t, testCfg(), repo, rec)
-	waitExec(t, rec, 1, 1*time.Second)
-	time.Sleep(50 * time.Millisecond) // let the (rejected) MarkSucceeded settle
+	flaky := newFlakyExecutor(2) // first 2 fail, 3rd succeeds
+	cfg := testCfg()
+	cfg.BackoffBase = 5 * time.Millisecond
+	cfg.BackoffMaxInterval = 20 * time.Millisecond
+	s, cancel := startScheduler(t, cfg, repo, flaky)
+	waitExec(t, flaky, 3, 2*time.Second) // 2 failures (re-scheduled) + 1 success
 	cancel()
 	s.Stop()
-	if task.Status != enum.TaskStatusClaimed {
-		t.Errorf("status = %s, want claimed (executor errored, no retry this round)", task.Status)
+	if task.Status != enum.TaskStatusSucceeded {
+		t.Errorf("status = %s, want succeeded after retries", task.Status)
 	}
+	if task.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2", task.Attempts)
+	}
+}
+
+func TestScheduler_ExecutorError_RetriesToDead(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.MaxRetries = 2
+	repo := newFakeRepo(task)
+	rec := newRecordingExecutor()
+	rec.err = errors.New("boom") // always fails
+	cfg := testCfg()
+	cfg.BackoffBase = 5 * time.Millisecond
+	cfg.BackoffMaxInterval = 20 * time.Millisecond
+	s, cancel := startScheduler(t, cfg, repo, rec)
+	// attempts: 0->1 (retry), 1->2 (retry), 2->3 (>2 -> dead): 3 executions total.
+	waitExec(t, rec, 3, 2*time.Second)
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
+	cancel()
+	s.Stop()
+	if task.Status != enum.TaskStatusDead {
+		t.Errorf("status = %s, want dead", task.Status)
+	}
+	if task.Attempts != 3 {
+		t.Errorf("attempts = %d, want 3", task.Attempts)
+	}
+	if task.LastError == "" {
+		t.Error("last_error is empty, want the failure reason")
+	}
+}
+
+func TestScheduler_Reaper_ReclaimsOrphan(t *testing.T) {
+	// A claimed task whose lease already expired; the reaper should reset it to
+	// 'scheduled', after which the scan loop claims and executes it to 'succeeded'.
+	past := time.Now().Add(-1 * time.Minute)
+	task := &model.Task{
+		BasePostgres: vgorm.BasePostgres{Id: "1"},
+		RefId:        "orphan-1",
+		Name:         "orphan",
+		Protocol:     enum.ProtocolHTTP,
+		Address:      "http://x",
+		ExecTime:     time.Now().Add(-1 * time.Minute),
+		Status:       enum.TaskStatusClaimed,
+		MaxRetries:   3,
+		LockedUntil:  &past,
+	}
+	repo := newFakeRepo(task)
+	rec := newRecordingExecutor()
+	cfg := testCfg()
+	cfg.ReaperInterval = 10 * time.Millisecond
+	s, cancel := startScheduler(t, cfg, repo, rec)
+	waitStatus(t, repo, task.Id, enum.TaskStatusSucceeded, 1*time.Second)
+	cancel()
+	s.Stop()
 }
 
 func TestScheduler_ExecutorPanic_WorkerSurvives(t *testing.T) {

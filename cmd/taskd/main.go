@@ -60,7 +60,7 @@ func main() {
 			timingwheel.WithSlotsPerLevel(resolved.SlotsPerLevel),
 			timingwheel.WithMaxLevels(resolved.MaxLevels),
 		)
-		sched = scheduler.NewScheduler(resolved, c.GetRepository().GetTaskRepo(), wheel, scheduler.NewNoopExecutor())
+		sched = scheduler.NewScheduler(resolved, c.GetRepository().GetTaskRepo(), wheel, scheduler.NewHTTPExecutor(resolved.HTTPTimeout))
 		sched.Start(ctx)
 		log.Info().Any("instance_id", resolved.InstanceID).Msg("scheduler started")
 	} else {

@@ -31,6 +31,15 @@ type TaskRepository interface {
 	// ConflictError (rows affected 0) if the task is not in 'claimed' state,
 	// guarding against double-fire and stale rows.
 	MarkSucceeded(ctx context.Context, taskId string) error
+	// MarkFailure records a failed execution: increments attempts, stores last_error,
+	// and either schedules a retry (status='scheduled', exec_time=nextExecTime) when
+	// attempts+1 <= max_retries, or marks the task 'dead'. The decision is made
+	// atomically in SQL. Returns rows affected (0 if the task was no longer claimed).
+	MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error)
+	// ReclaimOrphans resets claimed tasks whose lease (locked_until) has expired
+	// back to 'scheduled' so they can be re-claimed and re-executed. Returns the
+	// number of rows reset.
+	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
 }
 
 type taskRepositoryImpl struct {
@@ -131,4 +140,44 @@ func (t *taskRepositoryImpl) MarkSucceeded(ctx context.Context, taskId string) e
 		return verrors.ConflictError(fmt.Sprintf("task %s not in claimed state", taskId))
 	}
 	return nil
+}
+
+// MarkFailure increments attempts, stores the error, and either re-schedules the
+// task for retry or marks it dead — decided atomically by SQL based on max_retries.
+// Only a row currently in 'claimed' is affected.
+func (t *taskRepositoryImpl) MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error) {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET
+  attempts = attempts + 1,
+  last_error = ?,
+  status = CASE WHEN attempts + 1 > max_retries THEN ? ELSE ? END,
+  exec_time = CASE WHEN attempts + 1 > max_retries THEN exec_time ELSE ? END,
+  locked_until = NULL
+WHERE id = ? AND status = ?`,
+		lastError,
+		enum.TaskStatusDead,
+		enum.TaskStatusScheduled,
+		nextExecTime,
+		taskId,
+		enum.TaskStatusClaimed,
+	)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
+// ReclaimOrphans resets claimed tasks whose lease has expired back to 'scheduled'.
+func (t *taskRepositoryImpl) ReclaimOrphans(ctx context.Context, now time.Time) (int64, error) {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET status = ?, locked_until = NULL
+WHERE status = ? AND locked_until < ?`,
+		enum.TaskStatusScheduled,
+		enum.TaskStatusClaimed,
+		now,
+	)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
 }
