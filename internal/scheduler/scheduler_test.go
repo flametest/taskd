@@ -127,6 +127,21 @@ func (f *fakeRepo) ReclaimOrphans(ctx context.Context, now time.Time) (int64, er
 	return n, nil
 }
 
+// MarkDead mirrors the repo SQL: mark a claimed task dead without retrying.
+func (f *fakeRepo) MarkDead(ctx context.Context, taskId string, lastError string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[taskId]
+	if !ok || t.Status != enum.TaskStatusClaimed {
+		return errors.New("not claimed")
+	}
+	t.Attempts++
+	t.Status = enum.TaskStatusDead
+	t.LastError = lastError
+	t.LockedUntil = nil
+	return nil
+}
+
 // recordingExecutor records fired task ids on a buffered channel.
 type recordingExecutor struct {
 	ch    chan string
@@ -438,6 +453,31 @@ func TestScheduler_Reaper_ReclaimsOrphan(t *testing.T) {
 	waitStatus(t, repo, task.Id, enum.TaskStatusSucceeded, 1*time.Second)
 	cancel()
 	s.Stop()
+}
+
+// nonRetryableExecutor always returns a NonRetryableError, exercising the
+// scheduler's dead-without-retry path (e.g. HTTP 4xx).
+type nonRetryableExecutor struct{}
+
+func (nonRetryableExecutor) Execute(ctx context.Context, task *domain.Task) error {
+	return NewNonRetryableError(errors.New("bad request"))
+}
+
+func TestScheduler_NonRetryableGoesDead(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.MaxRetries = 3
+	repo := newFakeRepo(task)
+	cfg := testCfg()
+	s, cancel := startScheduler(t, cfg, repo, nonRetryableExecutor{})
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 2*time.Second)
+	cancel()
+	s.Stop()
+	if task.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1 (non-retryable, single attempt)", task.Attempts)
+	}
+	if task.LastError == "" {
+		t.Error("last_error is empty, want the failure reason")
+	}
 }
 
 func TestScheduler_ExecutorPanic_WorkerSurvives(t *testing.T) {

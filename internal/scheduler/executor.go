@@ -17,6 +17,16 @@ type Executor interface {
 	Execute(ctx context.Context, task *domain.Task) error
 }
 
+// NonRetryableError wraps an error whose cause will not change by retrying (e.g.
+// HTTP 4xx). The scheduler marks such tasks dead instead of retrying.
+type NonRetryableError struct{ Err error }
+
+func (e *NonRetryableError) Error() string { return e.Err.Error() }
+func (e *NonRetryableError) Unwrap() error { return e.Err }
+
+// NewNonRetryableError wraps err as a non-retryable error.
+func NewNonRetryableError(err error) error { return &NonRetryableError{Err: err} }
+
 // NoopExecutor is a no-op Executor used in round 1 and in tests. It logs the task
 // and returns nil. It carries no state and is safe for concurrent use.
 type NoopExecutor struct{}

@@ -22,6 +22,8 @@ type SchedulerConfig struct {
 
 	// HTTPTimeout bounds each HTTP executor call.
 	HTTPTimeout time.Duration `json:"http_timeout" yaml:"HTTPTimeout"`
+	// GrpcTimeout bounds each gRPC executor call.
+	GrpcTimeout time.Duration `json:"grpc_timeout" yaml:"GrpcTimeout"`
 	// BackoffBase and BackoffMaxInterval bound the exponential retry backoff.
 	BackoffBase        time.Duration `json:"backoff_base" yaml:"BackoffBase"`
 	BackoffMaxInterval time.Duration `json:"backoff_max_interval" yaml:"BackoffMaxInterval"`
@@ -40,6 +42,7 @@ func defaultSchedulerConfig() SchedulerConfig {
 		SlotsPerLevel:      256,
 		MaxLevels:          4,
 		HTTPTimeout:        10 * time.Second,
+		GrpcTimeout:        10 * time.Second,
 		BackoffBase:        1 * time.Second,
 		BackoffMaxInterval: 5 * time.Minute,
 		ReaperInterval:     5 * time.Second,
@@ -77,6 +80,9 @@ func ResolveSchedulerConfig(in SchedulerConfig) SchedulerConfig {
 	}
 	if in.HTTPTimeout <= 0 {
 		in.HTTPTimeout = d.HTTPTimeout
+	}
+	if in.GrpcTimeout <= 0 {
+		in.GrpcTimeout = d.GrpcTimeout
 	}
 	if in.BackoffBase <= 0 {
 		in.BackoffBase = d.BackoffBase

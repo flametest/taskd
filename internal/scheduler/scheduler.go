@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,7 @@ type taskClaimer interface {
 	Claim(ctx context.Context, now time.Time, lookahead time.Duration, batchSize int, lease time.Duration) ([]*model.Task, error)
 	MarkSucceeded(ctx context.Context, taskId string) error
 	MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error)
+	MarkDead(ctx context.Context, taskId string, lastError string) error
 	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
 }
 
@@ -186,10 +188,18 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	}()
 	dom := domain.NewFromDO(t)
 	if err := s.exec.Execute(context.Background(), dom); err != nil {
-		log.Info().Any("task_id", t.Id).Any("attempts", t.Attempts).Any("error", err.Error()).Msg("scheduler: execute failed, will retry/dead")
-		next := time.Now().Add(exponentialBackoff(t.Attempts, s.cfg.BackoffBase, s.cfg.BackoffMaxInterval))
-		if _, ferr := s.repo.MarkFailure(context.Background(), t.Id, err.Error(), next); ferr != nil {
-			log.Error().Any("error", ferr).Any("task_id", t.Id).Msg("scheduler: mark failure failed")
+		var nr *NonRetryableError
+		if errors.As(err, &nr) {
+			log.Info().Any("task_id", t.Id).Any("error", err.Error()).Msg("scheduler: execute failed, non-retryable -> dead")
+			if derr := s.repo.MarkDead(context.Background(), t.Id, err.Error()); derr != nil {
+				log.Error().Any("error", derr).Any("task_id", t.Id).Msg("scheduler: mark dead failed")
+			}
+		} else {
+			log.Info().Any("task_id", t.Id).Any("attempts", t.Attempts).Any("error", err.Error()).Msg("scheduler: execute failed, will retry/dead")
+			next := time.Now().Add(exponentialBackoff(t.Attempts, s.cfg.BackoffBase, s.cfg.BackoffMaxInterval))
+			if _, ferr := s.repo.MarkFailure(context.Background(), t.Id, err.Error(), next); ferr != nil {
+				log.Error().Any("error", ferr).Any("task_id", t.Id).Msg("scheduler: mark failure failed")
+			}
 		}
 		return
 	}

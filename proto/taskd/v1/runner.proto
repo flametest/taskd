@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package taskd.v1;
+
+option go_package = "github.com/flametest/taskd/pkg/proto/taskdv1;taskdv1";
+
+import "google/protobuf/struct.proto";
+
+// Runner is the gRPC contract taskd calls to execute a task. A target service
+// implements this service; taskd invokes Run for each task whose protocol is grpc.
+service Runner {
+  // Run executes the task identified by task_id/ref_id with the given params.
+  rpc Run(RunRequest) returns (RunResponse);
+}
+
+// RunRequest carries the task identity and its params as a JSON object.
+message RunRequest {
+  string task_id = 1;
+  string ref_id = 2;
+  google.protobuf.Struct params = 3;
+}
+
+// RunResponse is intentionally empty for now; fields can be added later.
+message RunResponse {}

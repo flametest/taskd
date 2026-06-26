@@ -36,6 +36,9 @@ type TaskRepository interface {
 	// attempts+1 <= max_retries, or marks the task 'dead'. The decision is made
 	// atomically in SQL. Returns rows affected (0 if the task was no longer claimed).
 	MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error)
+	// MarkDead directly marks a claimed task dead without retrying, recording the
+	// error. Used for non-retryable failures (e.g. HTTP 4xx).
+	MarkDead(ctx context.Context, taskId string, lastError string) error
 	// ReclaimOrphans resets claimed tasks whose lease (locked_until) has expired
 	// back to 'scheduled' so they can be re-claimed and re-executed. Returns the
 	// number of rows reset.
@@ -180,4 +183,20 @@ WHERE status = ? AND locked_until < ?`,
 		return 0, res.Error
 	}
 	return res.RowsAffected, nil
+}
+
+// MarkDead marks a claimed task dead without retrying, recording the error.
+func (t *taskRepositoryImpl) MarkDead(ctx context.Context, taskId string, lastError string) error {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET attempts = attempts + 1, status = ?, last_error = ?, locked_until = NULL
+WHERE id = ? AND status = ?`,
+		enum.TaskStatusDead, lastError, taskId, enum.TaskStatusClaimed,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return verrors.ConflictError(fmt.Sprintf("task %s not in claimed state", taskId))
+	}
+	return nil
 }

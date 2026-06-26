@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,6 +52,40 @@ func TestHTTPExecutor_ServerError(t *testing.T) {
 	exec := NewHTTPExecutor(2 * time.Second)
 	if err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
 		t.Fatal("expected error on 500, got nil")
+	}
+}
+
+func TestHTTPExecutor_4xxNonRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	exec := NewHTTPExecutor(2 * time.Second)
+	err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	if err == nil {
+		t.Fatal("expected error on 404, got nil")
+	}
+	var nr *NonRetryableError
+	if !errors.As(err, &nr) {
+		t.Errorf("404 should be a NonRetryableError, got %T: %v", err, err)
+	}
+}
+
+func TestHTTPExecutor_5xxRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	exec := NewHTTPExecutor(2 * time.Second)
+	err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	if err == nil {
+		t.Fatal("expected error on 502, got nil")
+	}
+	var nr *NonRetryableError
+	if errors.As(err, &nr) {
+		t.Errorf("502 should be retryable, got NonRetryableError")
 	}
 }
 

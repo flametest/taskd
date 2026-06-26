@@ -45,7 +45,13 @@ func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return verrors.InternalServerError(fmt.Sprintf("upstream returned %d", resp.StatusCode))
+		msg := fmt.Sprintf("upstream returned %d", resp.StatusCode)
+		if resp.StatusCode < 500 {
+			// 4xx: client error, retrying won't help -> non-retryable (dead).
+			return NewNonRetryableError(verrors.BadRequestError(msg))
+		}
+		// 5xx: server error -> retryable.
+		return verrors.InternalServerError(msg)
 	}
 	return nil
 }

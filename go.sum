@@ -24,8 +24,6 @@ github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymF
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
-github.com/flametest/vita v0.0.0-20260625160005-68ba4fd181b9 h1:HL5rjW+Rd2q7SSMyqn+n5C3Xub5zMoSh3PZ93RK1P50=
-github.com/flametest/vita v0.0.0-20260625160005-68ba4fd181b9/go.mod h1:+grRktUjzeTO92LpQ9OCFqUu/+OXr56mfHmXX3GkK8U=
 github.com/flametest/vita v0.0.0-20260625161549-d5ecbe955b9f h1:zS8t6WTXAU8SnCG1yI/oKGyyGnXssckhGmDTl3hMSYA=
 github.com/flametest/vita v0.0.0-20260625161549-d5ecbe955b9f/go.mod h1:+grRktUjzeTO92LpQ9OCFqUu/+OXr56mfHmXX3GkK8U=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
