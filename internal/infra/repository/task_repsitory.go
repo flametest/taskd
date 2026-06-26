@@ -23,9 +23,9 @@ type TaskRepository interface {
 	// now+lease. It runs SELECT ... FOR UPDATE SKIP LOCKED -> UPDATE inside one
 	// transaction so concurrent instances claim disjoint sets. Returns (nil, nil)
 	// when nothing is due.
-	// NOTE: the SKIP LOCKED guarantee is MySQL 8+ only; SQLite (used in unit
+	// NOTE: the SKIP LOCKED guarantee is PostgreSQL only; SQLite (used in unit
 	// tests) does not support it, so multi-instance correctness is validated
-	// manually against MySQL.
+	// manually against PostgreSQL.
 	Claim(ctx context.Context, now time.Time, lookahead time.Duration, batchSize int, lease time.Duration) ([]*model.Task, error)
 	// MarkSucceeded flips a task from 'claimed' to 'succeeded'. It returns
 	// ConflictError (rows affected 0) if the task is not in 'claimed' state,
@@ -77,7 +77,7 @@ func (t *taskRepositoryImpl) GetTasksByStatus(ctx context.Context, status enum.S
 }
 
 // Claim selects due scheduled rows with FOR UPDATE SKIP LOCKED, then updates them
-// to 'claimed' with a lease, all inside one transaction. MySQL 8+ only.
+// to 'claimed' with a lease, all inside one transaction. PostgreSQL only.
 func (t *taskRepositoryImpl) Claim(ctx context.Context, now time.Time, lookahead time.Duration,
 	batchSize int, lease time.Duration) ([]*model.Task, error) {
 

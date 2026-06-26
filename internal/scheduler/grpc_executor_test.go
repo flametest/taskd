@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -66,6 +67,36 @@ func TestGrpcExecutor_RPCError(t *testing.T) {
 	exec := NewGrpcExecutor(2 * time.Second)
 	if err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC)); err == nil {
 		t.Fatal("expected error from Run, got nil")
+	}
+}
+
+func TestGrpcExecutor_NonRetryableCode(t *testing.T) {
+	addr, cleanup := newGrpcServer(t, &stubRunner{err: status.Error(codes.InvalidArgument, "bad arg")})
+	defer cleanup()
+
+	exec := NewGrpcExecutor(2 * time.Second)
+	err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
+	if err == nil {
+		t.Fatal("expected error from Run, got nil")
+	}
+	var nr *NonRetryableError
+	if !errors.As(err, &nr) {
+		t.Errorf("InvalidArgument should be a NonRetryableError, got %T: %v", err, err)
+	}
+}
+
+func TestGrpcExecutor_RetryableCode(t *testing.T) {
+	addr, cleanup := newGrpcServer(t, &stubRunner{err: status.Error(codes.Unavailable, "down")})
+	defer cleanup()
+
+	exec := NewGrpcExecutor(2 * time.Second)
+	err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
+	if err == nil {
+		t.Fatal("expected error from Run, got nil")
+	}
+	var nr *NonRetryableError
+	if errors.As(err, &nr) {
+		t.Errorf("Unavailable should be retryable, got NonRetryableError")
 	}
 }
 

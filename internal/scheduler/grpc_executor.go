@@ -10,7 +10,9 @@ import (
 	taskdv1 "github.com/flametest/taskd/pkg/proto/taskdv1"
 	"github.com/flametest/vita/verrors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -45,7 +47,26 @@ func (e *GrpcExecutor) Execute(ctx context.Context, task *domain.Task) error {
 		return verrors.BadRequestError(fmt.Sprintf("convert params: %v", err))
 	}
 	_, err = client.Run(ctx, &taskdv1.RunRequest{TaskId: task.Id, RefId: task.RefId, Params: params})
-	return err
+	if err == nil {
+		return nil
+	}
+	if isRetryableGrpcStatus(status.Convert(err)) {
+		return err
+	}
+	return NewNonRetryableError(err)
+}
+
+// isRetryableGrpcStatus reports whether a gRPC status is worth retrying. Codes
+// that signal a client/logic error (InvalidArgument, NotFound, ...) are not
+// retryable; transient/server errors (Unavailable, DeadlineExceeded, ...) are.
+func isRetryableGrpcStatus(s *status.Status) bool {
+	switch s.Code() {
+	case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted,
+		codes.Aborted, codes.Internal, codes.Unknown, codes.Canceled, codes.DataLoss:
+		return true
+	default:
+		return false
+	}
 }
 
 // CompositeExecutor dispatches Execute to a per-protocol executor (HTTP or gRPC).
