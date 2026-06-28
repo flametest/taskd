@@ -235,7 +235,7 @@ func newScheduledTask(id string, execTime time.Time) *model.Task {
 
 // startScheduler builds a real system-clock wheel + scheduler, starts it, and
 // arranges cleanup. Returns the scheduler and a cancel func for the scan ctx.
-func startScheduler(t *testing.T, cfg SchedulerConfig, repo taskClaimer, exec Executor) (*Scheduler, context.CancelFunc) {
+func startScheduler(t *testing.T, cfg SchedulerConfig, repo taskClaimer, exec Executor, recorders ...taskRecorder) (*Scheduler, context.CancelFunc) {
 	t.Helper()
 	wheel := timingwheel.New(
 		timingwheel.WithTickInterval(cfg.TickInterval),
@@ -243,6 +243,9 @@ func startScheduler(t *testing.T, cfg SchedulerConfig, repo taskClaimer, exec Ex
 		timingwheel.WithMaxLevels(cfg.MaxLevels),
 	)
 	s := NewScheduler(cfg, repo, wheel, exec)
+	for _, r := range recorders {
+		s.WithRecorder(r)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
 	t.Cleanup(func() {
@@ -568,5 +571,166 @@ func TestResolveSchedulerConfig_DefaultsAndInstanceID(t *testing.T) {
 	cfg2 := ResolveSchedulerConfig(SchedulerConfig{InstanceID: "explicit-id"})
 	if cfg2.InstanceID != "explicit-id" {
 		t.Errorf("InstanceID = %q, want preserved explicit-id", cfg2.InstanceID)
+	}
+}
+
+// --- execution-record fakes & tests ---
+
+// fakeRecorder is an in-memory taskRecorder for auditing tests. Independent from
+// fakeRepo (which stays a pure taskClaimer) so existing tests are untouched.
+type fakeRecorder struct {
+	mu      sync.Mutex
+	records []*model.TaskRecord
+	err     error // when set, Record returns this and stores nothing
+}
+
+func newFakeRecorder() *fakeRecorder {
+	return &fakeRecorder{}
+}
+
+func (f *fakeRecorder) Record(ctx context.Context, r *model.TaskRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.records = append(f.records, r)
+	return nil
+}
+
+func (f *fakeRecorder) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.records)
+}
+
+// snapshot returns a copy so callers can read fields without holding the lock.
+func (f *fakeRecorder) snapshot() []*model.TaskRecord {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*model.TaskRecord, len(f.records))
+	copy(out, f.records)
+	return out
+}
+
+func TestScheduler_RecordsSuccess(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	repo := newFakeRepo(task)
+	exec := newRecordingExecutor()
+	recorder := newFakeRecorder()
+	cfg := testCfg()
+	s, cancel := startScheduler(t, cfg, repo, exec, recorder)
+	waitExec(t, exec, 1, 500*time.Millisecond)
+	cancel()
+	s.Stop()
+
+	if recorder.count() != 1 {
+		t.Fatalf("records = %d, want 1", recorder.count())
+	}
+	r := recorder.snapshot()[0]
+	if r.TaskId != task.Id {
+		t.Errorf("TaskId = %s, want %s", r.TaskId, task.Id)
+	}
+	if r.Result != enum.ExecutionSuccess {
+		t.Errorf("Result = %s, want success", r.Result)
+	}
+	if r.Attempt != 1 {
+		t.Errorf("Attempt = %d, want 1", r.Attempt)
+	}
+	if r.InstanceId != cfg.InstanceID {
+		t.Errorf("InstanceId = %q, want %q", r.InstanceId, cfg.InstanceID)
+	}
+	if r.ErrorMessage != "" {
+		t.Errorf("ErrorMessage = %q, want empty", r.ErrorMessage)
+	}
+	if r.Protocol != task.Protocol {
+		t.Errorf("Protocol = %s, want %s", r.Protocol, task.Protocol)
+	}
+	if r.DurationMs < 0 {
+		t.Errorf("DurationMs = %d, want >= 0", r.DurationMs)
+	}
+}
+
+func TestScheduler_RecordsAllRetriesToDead(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.MaxRetries = 2
+	repo := newFakeRepo(task)
+	exec := newRecordingExecutor()
+	exec.err = errors.New("boom")
+	recorder := newFakeRecorder()
+	cfg := testCfg()
+	cfg.BackoffBase = 5 * time.Millisecond
+	cfg.BackoffMaxInterval = 20 * time.Millisecond
+	s, cancel := startScheduler(t, cfg, repo, exec, recorder)
+	waitExec(t, exec, 3, 2*time.Second) // 2 retries + 1 final attempt = 3 executions
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
+	cancel()
+	s.Stop()
+
+	if recorder.count() != 3 {
+		t.Fatalf("records = %d, want 3 (one per execution, incl. the final dead)", recorder.count())
+	}
+	recs := recorder.snapshot()
+	for i, r := range recs {
+		// Records are appended in execution order, which for a single serially
+		// executed task is also ascending attempt order.
+		if r.Attempt != i+1 {
+			t.Errorf("record[%d].Attempt = %d, want %d", i, r.Attempt, i+1)
+		}
+		if r.Result != enum.ExecutionFailure {
+			t.Errorf("record[%d].Result = %s, want failure", i, r.Result)
+		}
+		if r.ErrorMessage != "boom" {
+			t.Errorf("record[%d].ErrorMessage = %q, want boom", i, r.ErrorMessage)
+		}
+		if r.TaskId != task.Id {
+			t.Errorf("record[%d].TaskId = %s, want %s", i, r.TaskId, task.Id)
+		}
+	}
+}
+
+func TestScheduler_RecordsNonRetryableFailure(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.MaxRetries = 3
+	repo := newFakeRepo(task)
+	recorder := newFakeRecorder()
+	cfg := testCfg()
+	s, cancel := startScheduler(t, cfg, repo, nonRetryableExecutor{}, recorder)
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 2*time.Second)
+	cancel()
+	s.Stop()
+
+	if recorder.count() != 1 {
+		t.Fatalf("records = %d, want 1 (non-retryable = single attempt)", recorder.count())
+	}
+	r := recorder.snapshot()[0]
+	if r.Result != enum.ExecutionFailure {
+		t.Errorf("Result = %s, want failure", r.Result)
+	}
+	if r.Attempt != 1 {
+		t.Errorf("Attempt = %d, want 1", r.Attempt)
+	}
+}
+
+// TestScheduler_RecorderError_NoStateMachineEffect proves the best-effort
+// invariant: when the recorder itself errors, the task still reaches its normal
+// terminal state. Auditing must never block scheduling.
+func TestScheduler_RecorderError_NoStateMachineEffect(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	repo := newFakeRepo(task)
+	exec := newRecordingExecutor()
+	recorder := newFakeRecorder()
+	recorder.err = errors.New("db down")
+	cfg := testCfg()
+	s, cancel := startScheduler(t, cfg, repo, exec, recorder)
+	waitStatus(t, repo, task.Id, enum.TaskStatusSucceeded, 1*time.Second)
+	cancel()
+	s.Stop()
+
+	if task.Status != enum.TaskStatusSucceeded {
+		t.Errorf("task status = %s, want succeeded (recorder error must not block the state machine)", task.Status)
+	}
+	if recorder.count() != 0 {
+		t.Errorf("records = %d, want 0 (recorder always errors, nothing stored)", recorder.count())
 	}
 }

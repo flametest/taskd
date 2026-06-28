@@ -8,11 +8,13 @@ import (
 
 type Repository interface {
 	GetTaskRepo(tx ...vgorm.Tx) TaskRepository
+	GetTaskRecordRepo(tx ...vgorm.Tx) TaskRecordRepository
 }
 
 type repositoryImpl struct {
-	db       *gorm.DB
-	taskRepo TaskRepository
+	db             *gorm.DB
+	taskRepo       TaskRepository
+	taskRecordRepo TaskRecordRepository
 }
 
 func (r repositoryImpl) GetTaskRepo(tx ...vgorm.Tx) TaskRepository {
@@ -26,8 +28,20 @@ func (r repositoryImpl) GetTaskRepo(tx ...vgorm.Tx) TaskRepository {
 	return NewTaskRepository(t.DB())
 }
 
+func (r repositoryImpl) GetTaskRecordRepo(tx ...vgorm.Tx) TaskRecordRepository {
+	if len(tx) == 0 || tx[0] == nil {
+		return r.taskRecordRepo
+	}
+	t, ok := tx[0].(vgorm.Tx)
+	if !ok {
+		return r.taskRecordRepo
+	}
+	return NewTaskRecordRepository(t.DB())
+}
+
 func NewRepository(db *gorm.DB) Repository {
 	return &repositoryImpl{
-		taskRepo: NewTaskRepository(db),
+		taskRepo:       NewTaskRepository(db),
+		taskRecordRepo: NewTaskRecordRepository(db),
 	}
 }

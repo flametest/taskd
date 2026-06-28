@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/flametest/taskd/internal/constant/enum"
 	"github.com/flametest/taskd/internal/domain"
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/timingwheel"
@@ -24,14 +25,23 @@ type taskClaimer interface {
 	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
 }
 
+// taskRecorder is the narrow slice of repository.TaskRecordRepository the
+// scheduler needs to append execution-audit rows. Kept separate from taskClaimer
+// because recording is best-effort and orthogonal to the task state machine. A
+// nil recorder (the default) disables auditing.
+type taskRecorder interface {
+	Record(ctx context.Context, r *model.TaskRecord) error
+}
+
 // Scheduler claims due tasks, hands them to a TimingWheel for precise firing, and
 // executes fired tasks on a fixed-size worker pool. Round 1 closes the loop
 // scheduled -> claimed -> succeeded; the failure/retry path is a later round.
 type Scheduler struct {
-	cfg   SchedulerConfig
-	repo  taskClaimer
-	wheel timingwheel.TimingWheel
-	exec  Executor
+	cfg      SchedulerConfig
+	repo     taskClaimer
+	recorder taskRecorder
+	wheel    timingwheel.TimingWheel
+	exec     Executor
 
 	taskCh   chan *model.Task
 	wg       sync.WaitGroup
@@ -52,6 +62,13 @@ func NewScheduler(cfg SchedulerConfig, repo taskClaimer, wheel timingwheel.Timin
 		exec:   exec,
 		taskCh: make(chan *model.Task, cfg.BatchSize),
 	}
+}
+
+// WithRecorder installs an execution-audit recorder. Optional; a nil recorder
+// (the default) disables auditing. Returns the scheduler for chaining.
+func (s *Scheduler) WithRecorder(r taskRecorder) *Scheduler {
+	s.recorder = r
+	return s
 }
 
 // Start launches the scan loop and worker pool. Idempotent.
@@ -176,18 +193,41 @@ func (s *Scheduler) workerLoop() {
 	}
 }
 
+// maxErrorMessageLen caps an executor error message stored in an audit row so a
+// pathological error cannot inflate the row.
+const maxErrorMessageLen = 8 << 10 // 8 KiB
+
 // executeAndFinalize runs the executor and marks the task succeeded on success. A
 // panic in the executor is isolated so the worker keeps serving other tasks.
 // Execution uses context.Background() so in-flight work finishes during shutdown
-// drain (the scan ctx is cancelled by then).
+// drain (the scan ctx is cancelled by then). Every execution (success + all
+// failures) is recorded to the audit log before the state-machine transition.
 func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	defer func() {
 		if r := recover(); r != nil {
+			// Round 1: a panic is not recorded. The state machine is left
+			// untouched (no Mark* call), matching existing behavior.
 			log.Error().Any("panic", r).Any("task_id", t.Id).Msg("scheduler: executor panic")
 		}
 	}()
+	attempt := t.Attempts + 1 // 1-based index of THIS execution
+	started := time.Now()
 	dom := domain.NewFromDO(t)
-	if err := s.exec.Execute(context.Background(), dom); err != nil {
+	err := s.exec.Execute(context.Background(), dom)
+	finished := time.Now()
+
+	// Record every execution BEFORE the state-machine transition so the audit row
+	// survives a crash between Execute returning and the Mark* call. Best-effort:
+	// a record failure is logged and swallowed, never affecting scheduling.
+	result := enum.ExecutionSuccess
+	errMsg := ""
+	if err != nil {
+		result = enum.ExecutionFailure
+		errMsg = truncateErr(err.Error(), maxErrorMessageLen)
+	}
+	s.record(t, attempt, result, errMsg, started, finished)
+
+	if err != nil {
 		var nr *NonRetryableError
 		if errors.As(err, &nr) {
 			log.Info().Any("task_id", t.Id).Any("error", err.Error()).Msg("scheduler: execute failed, non-retryable -> dead")
@@ -207,4 +247,47 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	if err := s.repo.MarkSucceeded(context.Background(), t.Id); err != nil {
 		log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: mark succeeded failed")
 	}
+}
+
+// record appends one execution-audit row via the recorder. Best-effort: any error
+// is logged and swallowed so auditing never affects the task state machine. A nil
+// recorder (the default) is a no-op, letting tests inject a taskClaimer without
+// implementing the recorder.
+func (s *Scheduler) record(t *model.Task, attempt int, result enum.Result, errMsg string, started, finished time.Time) {
+	if s.recorder == nil {
+		return
+	}
+	rec := &model.TaskRecord{
+		TaskId:       t.Id,
+		Attempt:      attempt,
+		Result:       result,
+		Protocol:     t.Protocol,
+		InstanceId:   s.cfg.InstanceID,
+		ErrorMessage: errMsg,
+		StartedAt:    started,
+		FinishedAt:   finished,
+		DurationMs:   finished.Sub(started).Milliseconds(),
+		// Response is left nil this round.
+	}
+	if rerr := s.recorder.Record(context.Background(), rec); rerr != nil {
+		log.Error().
+			Any("error", rerr).
+			Any("task_id", t.Id).
+			Any("attempt", attempt).
+			Msg("scheduler: record execution failed (best-effort, ignored)")
+	}
+}
+
+// truncateErr caps s at maxLen runes (with a trailing ellipsis) so a pathological
+// executor error cannot inflate an audit row. Operates on runes to avoid breaking
+// multi-byte characters.
+func truncateErr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= maxLen {
+		return s
+	}
+	return string(r[:maxLen]) + "..."
 }

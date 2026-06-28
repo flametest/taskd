@@ -5,12 +5,16 @@ import (
 
 	"github.com/flametest/taskd/internal/container"
 	"github.com/flametest/taskd/internal/domain"
+	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/dto"
 )
 
 type TaskService interface {
 	GetTaskById(ctx context.Context, id string) (*domain.Task, error)
 	CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error)
+	// ListTaskRecords returns the execution-audit rows of one task, newest-first,
+	// with limit/offset pagination (clamped by the repository).
+	ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error)
 }
 
 type taskServiceImpl struct {
@@ -39,4 +43,8 @@ func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq)
 	}
 	task.SetId(taskDO.Id)
 	return task, nil
+}
+
+func (t *taskServiceImpl) ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error) {
+	return t.container.GetRepository().GetTaskRecordRepo().ListByTaskId(ctx, taskId, limit, offset)
 }

@@ -64,7 +64,8 @@ func main() {
 			scheduler.NewHTTPExecutor(resolved.HTTPTimeout),
 			scheduler.NewGrpcExecutor(resolved.GrpcTimeout),
 		)
-		sched = scheduler.NewScheduler(resolved, c.GetRepository().GetTaskRepo(), wheel, exec)
+		sched = scheduler.NewScheduler(resolved, c.GetRepository().GetTaskRepo(), wheel, exec).
+			WithRecorder(c.GetRepository().GetTaskRecordRepo())
 		sched.Start(ctx)
 		log.Info().Any("instance_id", resolved.InstanceID).Msg("scheduler started")
 	} else {

@@ -82,13 +82,13 @@ type hierarchicalWheel struct {
 	slotsPerLevel int
 	numLevels     int
 
-	mu       sync.Mutex
-	levels   [][]*bucket
-	index    map[string]*timer
-	size     int
-	currentTime  time.Duration // monotonic logical time elapsed since Start
-	startedAt    time.Time
-	currentSlot  []int
+	mu          sync.Mutex
+	levels      [][]*bucket
+	index       map[string]*timer
+	size        int
+	currentTime time.Duration // monotonic logical time elapsed since Start
+	startedAt   time.Time
+	currentSlot []int
 
 	manual  bool
 	started bool

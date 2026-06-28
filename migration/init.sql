@@ -26,3 +26,25 @@ CREATE INDEX idx_task_status ON task (status);
 CREATE INDEX idx_task_exec_time ON task (exec_time);
 CREATE INDEX idx_task_claim ON task (status, exec_time);
 CREATE INDEX idx_task_locked_until ON task (locked_until);
+
+-- task_record is the append-only execution-audit log: one row per executor.Execute
+-- call (success, retryable failure, or non-retryable failure). task : task_record
+-- = 1 : N. Recording is best-effort and never coupled to the task state machine.
+CREATE TABLE task_record
+(
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id       UUID          NOT NULL, -- soft-FK to task.id; no constraint (matches task table style)
+    attempt       BIGINT        NOT NULL, -- 1-based index of THIS execution
+    result        VARCHAR(16)   NOT NULL, -- 'success' | 'failure'
+    protocol      VARCHAR(16)   NOT NULL, -- snapshot of task.protocol at exec time
+    instance_id   VARCHAR(128)  NOT NULL, -- which scheduler instance ran it
+    error_message TEXT,                    -- NULL on success; the executor's err.Error() on failure
+    started_at    TIMESTAMPTZ   NOT NULL,
+    finished_at   TIMESTAMPTZ   NOT NULL,
+    duration_ms   BIGINT        NOT NULL, -- finished_at - started_at, in ms
+    response      JSONB,                    -- reserved; NULL this round (executors don't capture bodies yet)
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- hot query: list one task's history newest-first
+CREATE INDEX idx_task_record_task_id_created_at ON task_record (task_id, created_at DESC);

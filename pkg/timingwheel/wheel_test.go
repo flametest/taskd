@@ -111,10 +111,10 @@ func TestAdd_NonPositiveDelay_FiresImmediatelyAndNotCounted(t *testing.T) {
 func TestAdd_DuplicateKey_ReturnsErrKeyExists(t *testing.T) {
 	w := newTestWheel(t)
 	defer w.Stop()
-	if err := w.Add(5*w.tickInterval, "a", func(){}); err != nil {
+	if err := w.Add(5*w.tickInterval, "a", func() {}); err != nil {
 		t.Fatalf("first Add: %v", err)
 	}
-	err := w.Add(5*w.tickInterval, "a", func(){})
+	err := w.Add(5*w.tickInterval, "a", func() {})
 	if !errors.Is(err, ErrKeyExists) {
 		t.Fatalf("second Add error = %v, want ErrKeyExists", err)
 	}
@@ -126,7 +126,7 @@ func TestAdd_DuplicateKey_ReturnsErrKeyExists(t *testing.T) {
 func TestAdd_AfterStop_ReturnsErrStopped(t *testing.T) {
 	w := newTestWheel(t)
 	w.Stop()
-	err := w.Add(5*w.tickInterval, "a", func(){})
+	err := w.Add(5*w.tickInterval, "a", func() {})
 	if !errors.Is(err, ErrStopped) {
 		t.Fatalf("Add after Stop error = %v, want ErrStopped", err)
 	}
@@ -139,7 +139,7 @@ func TestAdd_BeforeStart_Panics(t *testing.T) {
 			t.Fatalf("expected panic on Add before Start")
 		}
 	}()
-	_ = w.Add(5*time.Millisecond, "a", func(){})
+	_ = w.Add(5*time.Millisecond, "a", func() {})
 }
 
 func TestRemove_BeforeFire_Cancels(t *testing.T) {
@@ -346,7 +346,7 @@ func TestConcurrency(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 300; i++ {
 				key := fmt.Sprintf("k-%d-%d", g, i)
-				if err := w.Add(time.Duration(1+(i%10))*time.Millisecond, key, func(){}); err != nil {
+				if err := w.Add(time.Duration(1+(i%10))*time.Millisecond, key, func() {}); err != nil {
 					// collisions / stopped are fine under concurrency churn
 					continue
 				}
