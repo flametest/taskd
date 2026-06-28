@@ -9,6 +9,7 @@ import (
 
 	"github.com/flametest/taskd/internal/constant/enum"
 	"github.com/flametest/taskd/internal/infra/model"
+	"github.com/flametest/vita/vgorm"
 	log "github.com/flametest/vita/vlog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -43,6 +44,7 @@ func setupSQLiteDB(t *testing.T) *gorm.DB {
 	ddls := []string{
 		`CREATE TABLE task_record (
 			id            TEXT PRIMARY KEY,
+			version       INTEGER NOT NULL DEFAULT 0,
 			task_id       TEXT NOT NULL,
 			attempt       INTEGER NOT NULL,
 			result        TEXT NOT NULL,
@@ -53,7 +55,9 @@ func setupSQLiteDB(t *testing.T) *gorm.DB {
 			finished_at   DATETIME NOT NULL,
 			duration_ms   INTEGER NOT NULL,
 			response      BLOB,
-			created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			deleted_at    DATETIME
 		)`,
 		`CREATE INDEX idx_task_record_task_id_created_at ON task_record (task_id, created_at DESC)`,
 	}
@@ -69,15 +73,15 @@ func setupSQLiteDB(t *testing.T) *gorm.DB {
 // created_at (so ordering tests are independent of sub-second clock resolution).
 func newTestRecord(taskId string, attempt int, result enum.Result, createdAt time.Time) *model.TaskRecord {
 	return &model.TaskRecord{
-		RecordBase: model.RecordBase{Id: fmt.Sprintf("%s-%d", taskId, attempt), CreatedAt: createdAt},
-		TaskId:     taskId,
-		Attempt:    attempt,
-		Result:     result,
-		Protocol:   enum.ProtocolHTTP,
-		InstanceId: "test-instance",
-		StartedAt:  createdAt,
-		FinishedAt: createdAt.Add(time.Millisecond),
-		DurationMs: 1,
+		BasePostgres: vgorm.BasePostgres{Id: fmt.Sprintf("%s-%d", taskId, attempt), CreatedAt: createdAt},
+		TaskId:       taskId,
+		Attempt:      attempt,
+		Result:       result,
+		Protocol:     enum.ProtocolHTTP,
+		InstanceId:   "test-instance",
+		StartedAt:    createdAt,
+		FinishedAt:   createdAt.Add(time.Millisecond),
+		DurationMs:   1,
 	}
 }
 

@@ -4,25 +4,19 @@ import (
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
+	"github.com/flametest/vita/vgorm"
 	"gorm.io/datatypes"
 )
-
-// RecordBase is the append-only base for audit rows: a UUID primary key plus a
-// created_at timestamp. Unlike vgorm.BasePostgres it carries no version (rows are
-// immutable), no updated_at, and no soft-delete column — an audit log is never
-// updated or deleted.
-type RecordBase struct {
-	Id        string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	CreatedAt time.Time `gorm:"<-:create;index;type:TIMESTAMPTZ;default:CURRENT_TIMESTAMP;not null;column:created_at"`
-}
 
 // TaskRecord is one row of the execution-audit log: the outcome of a single
 // executor.Execute call (success, retryable failure, or non-retryable failure).
 // It is append-only and intentionally NOT coupled to the task state machine:
 // recording is best-effort and a failure to record never affects scheduling.
-// task : task_record = 1 : N.
+// task : task_record = 1 : N. It embeds vgorm.BasePostgres to stay consistent
+// with model.Task; the version/updated_at/deleted_at columns are inert for an
+// append-only row but harmless.
 type TaskRecord struct {
-	RecordBase
+	vgorm.BasePostgres
 	TaskId       string        `gorm:"column:task_id"`
 	Attempt      int           `gorm:"column:attempt"`
 	Result       enum.Result   `gorm:"column:result"`

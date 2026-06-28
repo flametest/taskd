@@ -33,6 +33,7 @@ CREATE INDEX idx_task_locked_until ON task (locked_until);
 CREATE TABLE task_record
 (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version       BIGINT        NOT NULL DEFAULT 0,
     task_id       UUID          NOT NULL, -- soft-FK to task.id; no constraint (matches task table style)
     attempt       BIGINT        NOT NULL, -- 1-based index of THIS execution
     result        VARCHAR(16)   NOT NULL, -- 'success' | 'failure'
@@ -43,8 +44,13 @@ CREATE TABLE task_record
     finished_at   TIMESTAMPTZ   NOT NULL,
     duration_ms   BIGINT        NOT NULL, -- finished_at - started_at, in ms
     response      JSONB,                    -- reserved; NULL this round (executors don't capture bodies yet)
-    created_at    TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at    TIMESTAMPTZ
 );
 
 -- hot query: list one task's history newest-first
 CREATE INDEX idx_task_record_task_id_created_at ON task_record (task_id, created_at DESC);
+CREATE INDEX idx_task_record_created_at ON task_record (created_at);
+CREATE INDEX idx_task_record_updated_at ON task_record (updated_at);
+CREATE INDEX idx_task_record_deleted_at ON task_record (deleted_at);
