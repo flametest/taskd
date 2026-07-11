@@ -28,13 +28,13 @@ func NewGrpcExecutor(timeout time.Duration) *GrpcExecutor {
 	return &GrpcExecutor{timeout: timeout}
 }
 
-func (e *GrpcExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (e *GrpcExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	if task.Protocol != enum.ProtocolGRPC {
-		return verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported by GrpcExecutor", task.Protocol))
+		return nil, verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported by GrpcExecutor", task.Protocol))
 	}
 	conn, err := grpc.NewClient(task.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -44,16 +44,20 @@ func (e *GrpcExecutor) Execute(ctx context.Context, task *domain.Task) error {
 
 	params, err := structpb.NewStruct(task.Params)
 	if err != nil {
-		return verrors.BadRequestError(fmt.Sprintf("convert params: %v", err))
+		return nil, verrors.BadRequestError(fmt.Sprintf("convert params: %v", err))
 	}
 	_, err = client.Run(ctx, &taskdv1.RunRequest{TaskId: task.Id, RefId: task.RefId, Params: params})
 	if err == nil {
-		return nil
+		// RunResponse carries no business payload (empty proto message), so only
+		// the OK status is recorded for the audit log.
+		return &ExecutionResponse{Status: codes.OK.String()}, nil
 	}
-	if isRetryableGrpcStatus(status.Convert(err)) {
-		return err
+	st := status.Convert(err)
+	execResp := &ExecutionResponse{Status: st.Code().String(), Body: st.Message()}
+	if isRetryableGrpcStatus(st) {
+		return execResp, err
 	}
-	return NewNonRetryableError(err)
+	return execResp, NewNonRetryableError(err)
 }
 
 // isRetryableGrpcStatus reports whether a gRPC status is worth retrying. Codes
@@ -81,13 +85,13 @@ func NewCompositeExecutor(httpExec, grpcExec Executor) *CompositeExecutor {
 	return &CompositeExecutor{httpExec: httpExec, grpcExec: grpcExec}
 }
 
-func (c *CompositeExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (c *CompositeExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	switch task.Protocol {
 	case enum.ProtocolHTTP, enum.ProtocolHTTPS:
 		return c.httpExec.Execute(ctx, task)
 	case enum.ProtocolGRPC:
 		return c.grpcExec.Execute(ctx, task)
 	default:
-		return verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported", task.Protocol))
+		return nil, verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported", task.Protocol))
 	}
 }

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/timingwheel"
 	log "github.com/flametest/vita/vlog"
+	"gorm.io/datatypes"
 )
 
 // taskClaimer is the narrow slice of repository.TaskRepository the scheduler
@@ -211,6 +213,7 @@ const maxErrorMessageLen = 8 << 10 // 8 KiB
 func (s *Scheduler) executeAndFinalize(t *model.Task) {
 	attempt := t.Attempts + 1 // 1-based index of THIS execution
 	started := time.Now()
+	var execResp *ExecutionResponse // declared early so the panic defer can read it
 	defer func() {
 		// A panic inside Execute skips the normal record/metrics below, so on
 		// panic we record a failure here instead. The state machine is NOT
@@ -219,14 +222,15 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 			finished := time.Now()
 			errMsg := truncateErr(fmt.Sprintf("panic: %v", r), maxErrorMessageLen)
 			log.Error().Any("panic", r).Any("task_id", t.Id).Msg("scheduler: executor panic")
-			s.record(t, attempt, enum.ExecutionFailure, errMsg, started, finished)
+			s.record(t, attempt, enum.ExecutionFailure, errMsg, started, finished, execResp)
 			executionDuration.WithLabelValues().Observe(finished.Sub(started).Seconds())
 			executionsTotal.WithLabelValues(string(enum.ExecutionFailure)).Inc()
 		}
 	}()
 
 	dom := domain.NewFromDO(t)
-	err := s.exec.Execute(context.Background(), dom)
+	var err error
+	execResp, err = s.exec.Execute(context.Background(), dom)
 	finished := time.Now()
 
 	// Record every execution BEFORE the state-machine transition so the audit row
@@ -238,7 +242,7 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 		result = enum.ExecutionFailure
 		errMsg = truncateErr(err.Error(), maxErrorMessageLen)
 	}
-	s.record(t, attempt, result, errMsg, started, finished)
+	s.record(t, attempt, result, errMsg, started, finished, execResp)
 	executionDuration.WithLabelValues().Observe(finished.Sub(started).Seconds())
 	executionsTotal.WithLabelValues(string(result)).Inc()
 
@@ -268,7 +272,7 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 // is logged and swallowed so auditing never affects the task state machine. A nil
 // recorder (the default) is a no-op, letting tests inject a taskClaimer without
 // implementing the recorder.
-func (s *Scheduler) record(t *model.Task, attempt int, result enum.Result, errMsg string, started, finished time.Time) {
+func (s *Scheduler) record(t *model.Task, attempt int, result enum.Result, errMsg string, started, finished time.Time, execResp *ExecutionResponse) {
 	if s.recorder == nil {
 		return
 	}
@@ -282,7 +286,13 @@ func (s *Scheduler) record(t *model.Task, attempt int, result enum.Result, errMs
 		StartedAt:    started,
 		FinishedAt:   finished,
 		DurationMs:   finished.Sub(started).Milliseconds(),
-		// Response is left nil this round.
+	}
+	if execResp != nil {
+		// Best-effort: store the upstream response as JSON. Left nil when the
+		// executor returned none (connect failure, panic, noop).
+		if data, merr := json.Marshal(execResp); merr == nil {
+			rec.Response = datatypes.JSON(data)
+		}
 	}
 	if rerr := s.recorder.Record(context.Background(), rec); rerr != nil {
 		log.Error().

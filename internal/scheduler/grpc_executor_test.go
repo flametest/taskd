@@ -55,7 +55,7 @@ func TestGrpcExecutor_Success(t *testing.T) {
 	defer cleanup()
 
 	exec := NewGrpcExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC)); err != nil {
+	if _, err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC)); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 }
@@ -65,7 +65,7 @@ func TestGrpcExecutor_RPCError(t *testing.T) {
 	defer cleanup()
 
 	exec := NewGrpcExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC)); err == nil {
+	if _, err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC)); err == nil {
 		t.Fatal("expected error from Run, got nil")
 	}
 }
@@ -75,7 +75,7 @@ func TestGrpcExecutor_NonRetryableCode(t *testing.T) {
 	defer cleanup()
 
 	exec := NewGrpcExecutor(2 * time.Second)
-	err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
+	_, err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
 	if err == nil {
 		t.Fatal("expected error from Run, got nil")
 	}
@@ -90,7 +90,7 @@ func TestGrpcExecutor_RetryableCode(t *testing.T) {
 	defer cleanup()
 
 	exec := NewGrpcExecutor(2 * time.Second)
-	err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
+	_, err := exec.Execute(context.Background(), newGrpcDom(addr, enum.ProtocolGRPC))
 	if err == nil {
 		t.Fatal("expected error from Run, got nil")
 	}
@@ -102,7 +102,7 @@ func TestGrpcExecutor_RetryableCode(t *testing.T) {
 
 func TestGrpcExecutor_UnsupportedProtocol(t *testing.T) {
 	exec := NewGrpcExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newGrpcDom("127.0.0.1:1", enum.ProtocolHTTP)); err == nil {
+	if _, err := exec.Execute(context.Background(), newGrpcDom("127.0.0.1:1", enum.ProtocolHTTP)); err == nil {
 		t.Fatal("expected error for non-grpc protocol, got nil")
 	}
 }

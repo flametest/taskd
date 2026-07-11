@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,9 +16,13 @@ import (
 	"github.com/flametest/vita/verrors"
 )
 
+// maxResponseBodyLen caps the response body stored in task_record.response so a
+// large upstream reply cannot inflate the audit row.
+const maxResponseBodyLen = 8 << 10 // 8 KiB
+
 // HTTPExecutor runs a task by POSTing its Params as a JSON body to Address. Only
-// http/https are supported this round; any other protocol returns an error (the
-// task retries toward dead). A non-nil error (network, timeout, or HTTP >=400)
+// http/https are supported; any other protocol returns an error (the task
+// retries toward dead). A non-nil error (network, timeout, or HTTP >=400)
 // triggers the retry path; a nil error triggers MarkSucceeded.
 type HTTPExecutor struct {
 	client *http.Client
@@ -27,34 +33,41 @@ func NewHTTPExecutor(timeout time.Duration) *HTTPExecutor {
 	return &HTTPExecutor{client: &http.Client{Timeout: timeout}}
 }
 
-func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	if task.Protocol != enum.ProtocolHTTP && task.Protocol != enum.ProtocolHTTPS {
-		return verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported", task.Protocol))
+		return nil, verrors.NotImplementedError(fmt.Sprintf("protocol %s not supported", task.Protocol))
 	}
 	body, err := json.Marshal(task.Params)
 	if err != nil {
-		return verrors.BadRequestError(fmt.Sprintf("marshal params: %v", err))
+		return nil, verrors.BadRequestError(fmt.Sprintf("marshal params: %v", err))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, normalizeURL(task.Address, task.Protocol), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return err // connect / timeout / DNS -> retry
+		return nil, err // connect / timeout / DNS -> retry, no response captured
 	}
 	defer resp.Body.Close()
+
+	// Read up to maxResponseBodyLen+1 bytes so truncation is detectable.
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyLen+1))
+	execResp := &ExecutionResponse{
+		Status: strconv.Itoa(resp.StatusCode),
+		Body:   truncateErr(string(raw), maxResponseBodyLen),
+	}
 	if resp.StatusCode >= 400 {
 		msg := fmt.Sprintf("upstream returned %d", resp.StatusCode)
 		if resp.StatusCode < 500 {
 			// 4xx: client error, retrying won't help -> non-retryable (dead).
-			return NewNonRetryableError(verrors.BadRequestError(msg))
+			return execResp, NewNonRetryableError(verrors.BadRequestError(msg))
 		}
 		// 5xx: server error -> retryable.
-		return verrors.InternalServerError(msg)
+		return execResp, verrors.InternalServerError(msg)
 	}
-	return nil
+	return execResp, nil
 }
 
 // normalizeURL ensures addr carries a scheme. A bare host[:port]/path such as

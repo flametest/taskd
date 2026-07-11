@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -153,12 +154,12 @@ func newRecordingExecutor() *recordingExecutor {
 	return &recordingExecutor{ch: make(chan string, 1024)}
 }
 
-func (r *recordingExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (r *recordingExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	if r.delay > 0 {
 		time.Sleep(r.delay)
 	}
 	r.ch <- task.Id
-	return r.err
+	return nil, r.err
 }
 
 func (r *recordingExecutor) count() int { return len(r.ch) }
@@ -176,16 +177,16 @@ func newFlakyExecutor(failUntil int) *flakyExecutor {
 	return &flakyExecutor{ch: make(chan string, 1024), failUntil: failUntil}
 }
 
-func (f *flakyExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (f *flakyExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	f.mu.Lock()
 	f.calls++
 	n := f.calls
 	f.mu.Unlock()
 	f.ch <- task.Id
 	if n <= f.failUntil {
-		return errors.New("flaky")
+		return nil, errors.New("flaky")
 	}
-	return nil
+	return nil, nil
 }
 
 func (f *flakyExecutor) count() int { return len(f.ch) }
@@ -193,7 +194,9 @@ func (f *flakyExecutor) count() int { return len(f.ch) }
 // panicExecutor always panics, to exercise worker panic isolation.
 type panicExecutor struct{}
 
-func (panicExecutor) Execute(ctx context.Context, task *domain.Task) error { panic("boom") }
+func (panicExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
+	panic("boom")
+}
 
 // blockingExecutor blocks inside Execute until release is signaled; used to test
 // graceful drain of in-flight work.
@@ -202,10 +205,21 @@ type blockingExecutor struct {
 	release chan struct{}
 }
 
-func (b *blockingExecutor) Execute(ctx context.Context, task *domain.Task) error {
+func (b *blockingExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
 	b.started <- struct{}{}
 	<-b.release
-	return nil
+	return nil, nil
+}
+
+// responseExecutor returns a canned ExecutionResponse (and optional error) to
+// verify the scheduler records the upstream payload in task_record.response.
+type responseExecutor struct {
+	resp *ExecutionResponse
+	err  error
+}
+
+func (e *responseExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
+	return e.resp, e.err
 }
 
 // --- helpers ---
@@ -462,8 +476,8 @@ func TestScheduler_Reaper_ReclaimsOrphan(t *testing.T) {
 // scheduler's dead-without-retry path (e.g. HTTP 4xx).
 type nonRetryableExecutor struct{}
 
-func (nonRetryableExecutor) Execute(ctx context.Context, task *domain.Task) error {
-	return NewNonRetryableError(errors.New("bad request"))
+func (nonRetryableExecutor) Execute(ctx context.Context, task *domain.Task) (*ExecutionResponse, error) {
+	return nil, NewNonRetryableError(errors.New("bad request"))
 }
 
 func TestScheduler_NonRetryableGoesDead(t *testing.T) {
@@ -761,5 +775,36 @@ func TestScheduler_ExecutorPanic_RecordsFailure(t *testing.T) {
 	}
 	if r.ErrorMessage != "panic: boom" {
 		t.Errorf("error_message = %q, want 'panic: boom'", r.ErrorMessage)
+	}
+}
+
+// TestScheduler_RecordsResponsePayload verifies the upstream response returned by
+// the executor is marshalled into task_record.response.
+func TestScheduler_RecordsResponsePayload(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	repo := newFakeRepo(task)
+	recorder := newFakeRecorder()
+	exec := &responseExecutor{resp: &ExecutionResponse{Status: "200", Body: `{"ok":true}`}}
+	s, cancel := startScheduler(t, testCfg(), repo, exec, recorder)
+	waitStatus(t, repo, task.Id, enum.TaskStatusSucceeded, 1*time.Second)
+	cancel()
+	s.Stop()
+
+	if recorder.count() != 1 {
+		t.Fatalf("records = %d, want 1", recorder.count())
+	}
+	r := recorder.snapshot()[0]
+	if len(r.Response) == 0 {
+		t.Fatal("Response empty, want the captured upstream payload")
+	}
+	var er ExecutionResponse
+	if err := json.Unmarshal(r.Response, &er); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if er.Status != "200" {
+		t.Errorf("Status = %s, want 200", er.Status)
+	}
+	if er.Body != `{"ok":true}` {
+		t.Errorf("Body = %q, want {\"ok\":true}", er.Body)
 	}
 }

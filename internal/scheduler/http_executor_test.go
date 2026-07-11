@@ -33,7 +33,7 @@ func TestHTTPExecutor_Success(t *testing.T) {
 	defer srv.Close()
 
 	exec := NewHTTPExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err != nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if gotMethod != http.MethodPost {
@@ -51,7 +51,7 @@ func TestHTTPExecutor_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	exec := NewHTTPExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
 		t.Fatal("expected error on 500, got nil")
 	}
 }
@@ -63,7 +63,7 @@ func TestHTTPExecutor_4xxNonRetryable(t *testing.T) {
 	defer srv.Close()
 
 	exec := NewHTTPExecutor(2 * time.Second)
-	err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	_, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
 	if err == nil {
 		t.Fatal("expected error on 404, got nil")
 	}
@@ -80,7 +80,7 @@ func TestHTTPExecutor_5xxRetryable(t *testing.T) {
 	defer srv.Close()
 
 	exec := NewHTTPExecutor(2 * time.Second)
-	err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	_, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
 	if err == nil {
 		t.Fatal("expected error on 502, got nil")
 	}
@@ -98,7 +98,7 @@ func TestHTTPExecutor_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	exec := NewHTTPExecutor(20 * time.Millisecond) // short timeout
-	if err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
 }
@@ -109,14 +109,14 @@ func TestHTTPExecutor_ConnectionRefused(t *testing.T) {
 	srv.Close()
 
 	exec := NewHTTPExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP)); err == nil {
 		t.Fatal("expected connection error, got nil")
 	}
 }
 
 func TestHTTPExecutor_UnsupportedProtocol(t *testing.T) {
 	exec := NewHTTPExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newHTTPDom("grpc://x", enum.ProtocolGRPC)); err == nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom("grpc://x", enum.ProtocolGRPC)); err == nil {
 		t.Fatal("expected error for grpc protocol, got nil")
 	}
 }
@@ -155,7 +155,55 @@ func TestHTTPExecutor_BareAddress(t *testing.T) {
 	// Strip "http://" to simulate a bare address like "127.0.0.1:port/actuator/health".
 	bare := strings.TrimPrefix(srv.URL, "http://") + "/actuator/health"
 	exec := NewHTTPExecutor(2 * time.Second)
-	if err := exec.Execute(context.Background(), newHTTPDom(bare, enum.ProtocolHTTP)); err != nil {
+	if _, err := exec.Execute(context.Background(), newHTTPDom(bare, enum.ProtocolHTTP)); err != nil {
 		t.Fatalf("Execute with bare address: %v", err)
+	}
+}
+
+func TestHTTPExecutor_CapturesResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	exec := NewHTTPExecutor(2 * time.Second)
+	resp, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("response is nil")
+	}
+	if resp.Status != "200" {
+		t.Errorf("Status = %q, want 200", resp.Status)
+	}
+	if resp.Body != `{"ok":true}` {
+		t.Errorf("Body = %q, want {\"ok\":true}", resp.Body)
+	}
+}
+
+// TestHTTPExecutor_CapturesResponseOnError verifies the body is captured even on
+// 4xx, so the audit log shows why the upstream rejected the request.
+func TestHTTPExecutor_CapturesResponseOnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("bad input"))
+	}))
+	defer srv.Close()
+
+	exec := NewHTTPExecutor(2 * time.Second)
+	resp, err := exec.Execute(context.Background(), newHTTPDom(srv.URL, enum.ProtocolHTTP))
+	if err == nil {
+		t.Fatal("expected error on 400")
+	}
+	if resp == nil {
+		t.Fatal("response is nil even on 4xx (body should be captured)")
+	}
+	if resp.Status != "400" {
+		t.Errorf("Status = %q, want 400", resp.Status)
+	}
+	if resp.Body != "bad input" {
+		t.Errorf("Body = %q, want 'bad input'", resp.Body)
 	}
 }
