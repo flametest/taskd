@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -112,6 +113,7 @@ func (s *Scheduler) reapOnce(ctx context.Context) {
 		return
 	}
 	if n > 0 {
+		tasksReclaimed.WithLabelValues().Add(float64(n))
 		log.Info().Any("reclaimed", n).Msg("scheduler: reclaimed orphaned tasks")
 	}
 }
@@ -152,6 +154,10 @@ func (s *Scheduler) scanOnce(ctx context.Context) {
 	if err != nil {
 		log.Error().Any("error", err).Msg("scheduler: claim failed")
 		return
+	}
+	if len(claimed) > 0 {
+		tasksClaimed.WithLabelValues().Add(float64(len(claimed)))
+		workerQueueDepth.Set(float64(len(s.taskCh)))
 	}
 	for _, t := range claimed {
 		s.dispatch(t, now)
@@ -203,15 +209,22 @@ const maxErrorMessageLen = 8 << 10 // 8 KiB
 // drain (the scan ctx is cancelled by then). Every execution (success + all
 // failures) is recorded to the audit log before the state-machine transition.
 func (s *Scheduler) executeAndFinalize(t *model.Task) {
-	defer func() {
-		if r := recover(); r != nil {
-			// Round 1: a panic is not recorded. The state machine is left
-			// untouched (no Mark* call), matching existing behavior.
-			log.Error().Any("panic", r).Any("task_id", t.Id).Msg("scheduler: executor panic")
-		}
-	}()
 	attempt := t.Attempts + 1 // 1-based index of THIS execution
 	started := time.Now()
+	defer func() {
+		// A panic inside Execute skips the normal record/metrics below, so on
+		// panic we record a failure here instead. The state machine is NOT
+		// mutated: the task stays claimed and is reclaimed by the reaper.
+		if r := recover(); r != nil {
+			finished := time.Now()
+			errMsg := truncateErr(fmt.Sprintf("panic: %v", r), maxErrorMessageLen)
+			log.Error().Any("panic", r).Any("task_id", t.Id).Msg("scheduler: executor panic")
+			s.record(t, attempt, enum.ExecutionFailure, errMsg, started, finished)
+			executionDuration.WithLabelValues().Observe(finished.Sub(started).Seconds())
+			executionsTotal.WithLabelValues(string(enum.ExecutionFailure)).Inc()
+		}
+	}()
+
 	dom := domain.NewFromDO(t)
 	err := s.exec.Execute(context.Background(), dom)
 	finished := time.Now()
@@ -226,6 +239,8 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 		errMsg = truncateErr(err.Error(), maxErrorMessageLen)
 	}
 	s.record(t, attempt, result, errMsg, started, finished)
+	executionDuration.WithLabelValues().Observe(finished.Sub(started).Seconds())
+	executionsTotal.WithLabelValues(string(result)).Inc()
 
 	if err != nil {
 		var nr *NonRetryableError

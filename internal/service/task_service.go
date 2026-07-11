@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/flametest/taskd/internal/container"
 	"github.com/flametest/taskd/internal/domain"
@@ -12,9 +13,13 @@ import (
 type TaskService interface {
 	GetTaskById(ctx context.Context, id string) (*domain.Task, error)
 	CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error)
-	// ListTaskRecords returns the execution-audit rows of one task, newest-first,
-	// with limit/offset pagination (clamped by the repository).
 	ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error)
+	// ReactivateTask reactivates a dead task, re-scheduling it at execTime (or
+	// now when nil). Returns ConflictError if the task is not in dead status.
+	ReactivateTask(ctx context.Context, taskId string, execTime *time.Time) error
+	// CancelTask cancels a scheduled task. Returns ConflictError if the task is
+	// not in scheduled status (claimed/executing/finished tasks cannot be canceled).
+	CancelTask(ctx context.Context, taskId string) error
 }
 
 type taskServiceImpl struct {
@@ -47,4 +52,16 @@ func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq)
 
 func (t *taskServiceImpl) ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error) {
 	return t.container.GetRepository().GetTaskRecordRepo().ListByTaskId(ctx, taskId, limit, offset)
+}
+
+func (t *taskServiceImpl) ReactivateTask(ctx context.Context, taskId string, execTime *time.Time) error {
+	next := time.Now()
+	if execTime != nil {
+		next = *execTime
+	}
+	return t.container.GetRepository().GetTaskRepo().Reactivate(ctx, taskId, next)
+}
+
+func (t *taskServiceImpl) CancelTask(ctx context.Context, taskId string) error {
+	return t.container.GetRepository().GetTaskRepo().Cancel(ctx, taskId)
 }

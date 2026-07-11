@@ -37,11 +37,21 @@ func main() {
 	verrors.Initialize(cfg.AppConfig.Name)
 	log.InitLogger(log.ZerologType, cfg.AppConfig.Name, cfg.LogLevel)
 	log.Info().Msg("starting taskd")
-	srv, err := vserver.NewEchoServer(ctx, &cfg.AppConfig)
+	c, err := container.NewContainer(cfg)
 	if err != nil {
 		panic(err)
 	}
-	c, err := container.NewContainer(cfg)
+	// Readiness gate: the HTTP server is "ready" only when the DB is reachable,
+	// so /ready reports 503 if the connection is down (during startup or an
+	// outage) and lets the load balancer stop sending traffic.
+	ready := func(ctx context.Context) error {
+		sqlDB, err := c.GetDB().DB()
+		if err != nil {
+			return err
+		}
+		return sqlDB.PingContext(ctx)
+	}
+	srv, err := vserver.NewEchoServer(ctx, &cfg.AppConfig, vserver.WithMetrics(), vserver.WithReadinessCheck(ready))
 	if err != nil {
 		panic(err)
 	}

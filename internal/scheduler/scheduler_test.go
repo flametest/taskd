@@ -734,3 +734,32 @@ func TestScheduler_RecorderError_NoStateMachineEffect(t *testing.T) {
 		t.Errorf("records = %d, want 0 (recorder always errors, nothing stored)", recorder.count())
 	}
 }
+
+// TestScheduler_ExecutorPanic_RecordsFailure verifies the panic path records a
+// failure audit row (and metrics) while leaving the state machine untouched
+// (task stays claimed, no Mark* call).
+func TestScheduler_ExecutorPanic_RecordsFailure(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	repo := newFakeRepo(task)
+	recorder := newFakeRecorder()
+	cfg := testCfg()
+	cfg.ReaperInterval = 10 * time.Second // keep the panicked task claimed (no reclaim) during the test
+	s, cancel := startScheduler(t, cfg, repo, panicExecutor{}, recorder)
+	waitExec(t, recorder, 1, 2*time.Second) // the deferred record counts as 1 execution
+	cancel()
+	s.Stop()
+
+	if task.Status != enum.TaskStatusClaimed {
+		t.Errorf("status = %s, want claimed (panic must not mutate the state machine)", task.Status)
+	}
+	if recorder.count() < 1 {
+		t.Fatalf("records = %d, want >= 1 (panic should be recorded as failure)", recorder.count())
+	}
+	r := recorder.snapshot()[0]
+	if r.Result != enum.ExecutionFailure {
+		t.Errorf("result = %s, want failure", r.Result)
+	}
+	if r.ErrorMessage != "panic: boom" {
+		t.Errorf("error_message = %q, want 'panic: boom'", r.ErrorMessage)
+	}
+}

@@ -43,6 +43,15 @@ type TaskRepository interface {
 	// back to 'scheduled' so they can be re-claimed and re-executed. Returns the
 	// number of rows reset.
 	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
+	// Reactivate flips a dead task back to scheduled, resetting attempts and
+	// last_error and re-scheduling it at nextExecTime so it is immediately
+	// eligible for claiming. Returns ConflictError (rows affected 0) if the task
+	// is not in dead status.
+	Reactivate(ctx context.Context, taskId string, nextExecTime time.Time) error
+	// Cancel transitions a scheduled task to canceled. Only scheduled tasks can be
+	// canceled; a task already claimed (executing) cannot. Returns ConflictError
+	// (rows affected 0) if the task is not scheduled.
+	Cancel(ctx context.Context, taskId string) error
 }
 
 type taskRepositoryImpl struct {
@@ -197,6 +206,40 @@ WHERE id = ? AND status = ?`,
 	}
 	if res.RowsAffected == 0 {
 		return verrors.ConflictError(fmt.Sprintf("task %s not in claimed state", taskId))
+	}
+	return nil
+}
+
+// Reactivate flips a dead task back to scheduled, resetting attempts/last_error
+// and re-scheduling it at nextExecTime (immediately re-runnable).
+func (t *taskRepositoryImpl) Reactivate(ctx context.Context, taskId string, nextExecTime time.Time) error {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET status = ?, attempts = 0, last_error = '', exec_time = ?, locked_until = NULL
+WHERE id = ? AND status = ?`,
+		enum.TaskStatusScheduled, nextExecTime, taskId, enum.TaskStatusDead,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return verrors.ConflictError(fmt.Sprintf("task %s not in dead state", taskId))
+	}
+	return nil
+}
+
+// Cancel transitions a scheduled task to canceled. Claimed (executing) or
+// finished tasks cannot be canceled.
+func (t *taskRepositoryImpl) Cancel(ctx context.Context, taskId string) error {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET status = ?, locked_until = NULL
+WHERE id = ? AND status = ?`,
+		enum.TaskStatusCanceled, taskId, enum.TaskStatusScheduled,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return verrors.ConflictError(fmt.Sprintf("task %s not in scheduled state", taskId))
 	}
 	return nil
 }

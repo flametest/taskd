@@ -9,6 +9,7 @@ const (
 	TaskStatusSucceeded = "succeeded"
 	TaskStatusFailed    = "failed"
 	TaskStatusDead      = "dead"
+	TaskStatusCanceled  = "canceled"
 )
 
 func (s Status) String() string {
