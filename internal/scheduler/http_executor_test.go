@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,5 +118,44 @@ func TestHTTPExecutor_UnsupportedProtocol(t *testing.T) {
 	exec := NewHTTPExecutor(2 * time.Second)
 	if err := exec.Execute(context.Background(), newHTTPDom("grpc://x", enum.ProtocolGRPC)); err == nil {
 		t.Fatal("expected error for grpc protocol, got nil")
+	}
+}
+
+func TestNormalizeURL(t *testing.T) {
+	cases := []struct {
+		addr  string
+		proto enum.Protocol
+		want  string
+	}{
+		{"127.0.0.1:8080/actuator/health", enum.ProtocolHTTP, "http://127.0.0.1:8080/actuator/health"},
+		{"127.0.0.1:8080", enum.ProtocolHTTPS, "https://127.0.0.1:8080"},
+		{"http://example.com/x", enum.ProtocolHTTP, "http://example.com/x"},
+		{"https://example.com/x", enum.ProtocolHTTPS, "https://example.com/x"},
+	}
+	for _, c := range cases {
+		if got := normalizeURL(c.addr, c.proto); got != c.want {
+			t.Errorf("normalizeURL(%q, %s) = %q, want %q", c.addr, c.proto, got, c.want)
+		}
+	}
+}
+
+// TestHTTPExecutor_BareAddress verifies a bare address (no scheme) reaches the
+// upstream instead of failing at url.Parse. Regression test for the
+// "first path segment in URL cannot contain colon" bug.
+func TestHTTPExecutor_BareAddress(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/actuator/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	// Strip "http://" to simulate a bare address like "127.0.0.1:port/actuator/health".
+	bare := strings.TrimPrefix(srv.URL, "http://") + "/actuator/health"
+	exec := NewHTTPExecutor(2 * time.Second)
+	if err := exec.Execute(context.Background(), newHTTPDom(bare, enum.ProtocolHTTP)); err != nil {
+		t.Fatalf("Execute with bare address: %v", err)
 	}
 }

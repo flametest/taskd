@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
@@ -34,7 +35,7 @@ func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) error {
 	if err != nil {
 		return verrors.BadRequestError(fmt.Sprintf("marshal params: %v", err))
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, task.Address, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, normalizeURL(task.Address, task.Protocol), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -54,4 +55,18 @@ func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) error {
 		return verrors.InternalServerError(msg)
 	}
 	return nil
+}
+
+// normalizeURL ensures addr carries a scheme. A bare host[:port]/path such as
+// "127.0.0.1:8080/actuator/health" is otherwise parsed as a path by url.Parse,
+// failing with "first path segment in URL cannot contain colon". The scheme is
+// derived from the task protocol when addr has no "://".
+func normalizeURL(addr string, protocol enum.Protocol) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	if protocol == enum.ProtocolHTTPS {
+		return "https://" + addr
+	}
+	return "http://" + addr
 }
