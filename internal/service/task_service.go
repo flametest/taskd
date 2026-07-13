@@ -20,8 +20,9 @@ type TaskService interface {
 	// ReactivateTask reactivates a dead task, re-scheduling it at execTime (or
 	// now when nil). Returns ConflictError if the task is not in dead status.
 	ReactivateTask(ctx context.Context, taskId string, execTime *time.Time) error
-	// CancelTask cancels a scheduled task. Returns ConflictError if the task is
-	// not in scheduled status (claimed/executing/finished tasks cannot be canceled).
+	// CancelTask cancels a scheduled or claimed (running) task. Canceling a
+	// running task stops further scheduling but does not interrupt the in-flight
+	// execution. Returns ConflictError for terminal states (succeeded/dead/canceled).
 	CancelTask(ctx context.Context, taskId string) error
 }
 

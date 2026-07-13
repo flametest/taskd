@@ -48,9 +48,11 @@ type TaskRepository interface {
 	// eligible for claiming. Returns ConflictError (rows affected 0) if the task
 	// is not in dead status.
 	Reactivate(ctx context.Context, taskId string, nextExecTime time.Time) error
-	// Cancel transitions a scheduled task to canceled. Only scheduled tasks can be
-	// canceled; a task already claimed (executing) cannot. Returns ConflictError
-	// (rows affected 0) if the task is not scheduled.
+	// Cancel transitions a scheduled or claimed task to canceled. Canceling a
+	// claimed (running) task stops further scheduling; the in-flight execution
+	// itself is not interrupted (it finishes, then its Mark* call no-ops because
+	// the row is no longer claimed). Returns ConflictError (rows affected 0) if
+	// the task is neither scheduled nor claimed.
 	Cancel(ctx context.Context, taskId string) error
 	// Reschedule advances a claimed recurring task to its next occurrence:
 	// status -> scheduled, attempts reset to 0, last_error cleared, exec_time set
@@ -232,19 +234,21 @@ WHERE id = ? AND status = ?`,
 	return nil
 }
 
-// Cancel transitions a scheduled task to canceled. Claimed (executing) or
-// finished tasks cannot be canceled.
+// Cancel transitions a scheduled or claimed task to canceled. Canceling a
+// claimed (running) task stops further scheduling; the in-flight execution
+// finishes on its own and its subsequent Mark* call no-ops (row no longer
+// claimed). Terminal states (succeeded/dead/canceled) are not cancellable.
 func (t *taskRepositoryImpl) Cancel(ctx context.Context, taskId string) error {
 	res := t.db.WithContext(ctx).Exec(`
 UPDATE task SET status = ?, locked_until = NULL
-WHERE id = ? AND status = ?`,
-		enum.TaskStatusCanceled, taskId, enum.TaskStatusScheduled,
+WHERE id = ? AND status IN (?, ?)`,
+		enum.TaskStatusCanceled, taskId, enum.TaskStatusScheduled, enum.TaskStatusClaimed,
 	)
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return verrors.ConflictError(fmt.Sprintf("task %s not in scheduled state", taskId))
+		return verrors.ConflictError(fmt.Sprintf("task %s not in scheduled or claimed state", taskId))
 	}
 	return nil
 }

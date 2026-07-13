@@ -118,6 +118,10 @@ func TestTaskRepository_Cancel(t *testing.T) {
 	if err := db.Create(claimed).Error; err != nil {
 		t.Fatalf("seed claimed: %v", err)
 	}
+	succeeded := newTask("t-succeeded", enum.TaskStatusSucceeded)
+	if err := db.Create(succeeded).Error; err != nil {
+		t.Fatalf("seed succeeded: %v", err)
+	}
 
 	if err := repo.Cancel(ctx, "t-scheduled"); err != nil {
 		t.Fatalf("Cancel scheduled: %v", err)
@@ -127,12 +131,24 @@ func TestTaskRepository_Cancel(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	if got.Status != enum.TaskStatusCanceled {
-		t.Errorf("status = %s, want canceled", got.Status)
+		t.Errorf("scheduled -> status = %s, want canceled", got.Status)
 	}
 
-	// Canceling a claimed (executing) task must fail.
-	if err := repo.Cancel(ctx, "t-claimed"); err == nil {
-		t.Error("Cancel claimed: expected conflict error, got nil")
+	// Canceling a claimed (running) task is allowed: stops further scheduling.
+	// The in-flight execution finishes on its own; its later Mark* call no-ops.
+	if err := repo.Cancel(ctx, "t-claimed"); err != nil {
+		t.Fatalf("Cancel claimed: %v", err)
+	}
+	if err := db.First(&got, "id = ?", "t-claimed").Error; err != nil {
+		t.Fatalf("reload claimed: %v", err)
+	}
+	if got.Status != enum.TaskStatusCanceled {
+		t.Errorf("claimed -> status = %s, want canceled", got.Status)
+	}
+
+	// Terminal states are not cancellable.
+	if err := repo.Cancel(ctx, "t-succeeded"); err == nil {
+		t.Error("Cancel succeeded: expected conflict error, got nil")
 	}
 }
 
