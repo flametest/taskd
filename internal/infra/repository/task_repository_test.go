@@ -139,11 +139,12 @@ func TestTaskRepository_Cancel(t *testing.T) {
 	if err := repo.Cancel(ctx, "t-claimed"); err != nil {
 		t.Fatalf("Cancel claimed: %v", err)
 	}
-	if err := db.First(&got, "id = ?", "t-claimed").Error; err != nil {
+	var got2 model.Task
+	if err := db.First(&got2, "id = ?", "t-claimed").Error; err != nil {
 		t.Fatalf("reload claimed: %v", err)
 	}
-	if got.Status != enum.TaskStatusCanceled {
-		t.Errorf("claimed -> status = %s, want canceled", got.Status)
+	if got2.Status != enum.TaskStatusCanceled {
+		t.Errorf("claimed -> status = %s, want canceled", got2.Status)
 	}
 
 	// Terminal states are not cancellable.
