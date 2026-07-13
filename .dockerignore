@@ -1,0 +1,8 @@
+# Build context excludes - keep the image small and avoid leaking local files.
+.git
+.idea
+.claude
+docs
+**/*_test.go
+*.md
+grpcmock
