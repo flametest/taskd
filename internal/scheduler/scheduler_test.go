@@ -143,6 +143,23 @@ func (f *fakeRepo) MarkDead(ctx context.Context, taskId string, lastError string
 	return nil
 }
 
+// Reschedule mirrors the repo SQL: advance a claimed recurring task to its next
+// occurrence (scheduled, attempts reset, last_error cleared, exec_time set).
+func (f *fakeRepo) Reschedule(ctx context.Context, taskId string, nextExecTime time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.tasks[taskId]
+	if !ok || t.Status != enum.TaskStatusClaimed {
+		return errors.New("not claimed")
+	}
+	t.Status = enum.TaskStatusScheduled
+	t.Attempts = 0
+	t.LastError = ""
+	t.ExecTime = nextExecTime
+	t.LockedUntil = nil
+	return nil
+}
+
 // recordingExecutor records fired task ids on a buffered channel.
 type recordingExecutor struct {
 	ch    chan string
@@ -807,4 +824,82 @@ func TestScheduler_RecordsResponsePayload(t *testing.T) {
 	if er.Body != `{"ok":true}` {
 		t.Errorf("Body = %q, want {\"ok\":true}", er.Body)
 	}
+}
+
+// --- recurring (cron) task tests ---
+
+func TestScheduler_RecurringSuccess_Reschedules(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.Cron = "@every 1m"
+	repo := newFakeRepo(task)
+	rec := newRecordingExecutor()
+	s, cancel := startScheduler(t, testCfg(), repo, rec)
+	waitExec(t, rec, 1, 2*time.Second)
+	cancel()
+	s.Stop()
+
+	if task.Status != enum.TaskStatusScheduled {
+		t.Errorf("status = %s, want scheduled (rescheduled for next occurrence)", task.Status)
+	}
+	if task.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0 (reset on reschedule)", task.Attempts)
+	}
+	if task.LockedUntil != nil {
+		t.Errorf("locked_until = %v, want nil (lease cleared on reschedule)", task.LockedUntil)
+	}
+	now := time.Now()
+	if !task.ExecTime.After(now) || task.ExecTime.Sub(now) > 2*time.Minute {
+		t.Errorf("exec_time = %v, want between now and now+2m (rescheduled ~1m out)", task.ExecTime)
+	}
+}
+
+func TestScheduler_RecurringFailure_GoesDead(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.Cron = "@every 1m"
+	task.MaxRetries = 2
+	repo := newFakeRepo(task)
+	rec := newRecordingExecutor()
+	rec.err = errors.New("boom")
+	cfg := testCfg()
+	cfg.BackoffBase = 5 * time.Millisecond
+	cfg.BackoffMaxInterval = 20 * time.Millisecond
+	s, cancel := startScheduler(t, cfg, repo, rec)
+	waitExec(t, rec, 3, 2*time.Second) // 2 retries + final = 3 executions
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
+	cancel()
+	s.Stop()
+
+	if task.Status != enum.TaskStatusDead {
+		t.Errorf("status = %s, want dead (recurring task that keeps failing stops the schedule)", task.Status)
+	}
+}
+
+func TestScheduler_RecurringUnsatisfiable_GoesDead(t *testing.T) {
+	task := newScheduledTask("1", time.Now())
+	task.Cron = "0 9 31 2 *" // Feb 31 does not exist -> SpecSchedule.Next returns zero
+	repo := newFakeRepo(task)
+	rec := newRecordingExecutor()
+	s, cancel := startScheduler(t, testCfg(), repo, rec)
+	waitExec(t, rec, 1, 2*time.Second)
+	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
+	cancel()
+	s.Stop()
+
+	if task.Status != enum.TaskStatusDead {
+		t.Errorf("status = %s, want dead (unsatisfiable cron)", task.Status)
+	}
+	if task.LastError != "cron schedule unsatisfiable" {
+		t.Errorf("last_error = %q, want 'cron schedule unsatisfiable'", task.LastError)
+	}
+}
+
+func TestNewScheduler_BadTimeZone_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on invalid timezone")
+		}
+	}()
+	cfg := ResolveSchedulerConfig(SchedulerConfig{TimeZone: "bad/tz"})
+	wheel := timingwheel.New(timingwheel.WithTickInterval(5 * time.Millisecond))
+	NewScheduler(cfg, newFakeRepo(), wheel, newRecordingExecutor())
 }

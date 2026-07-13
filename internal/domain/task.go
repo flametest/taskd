@@ -26,6 +26,7 @@ type Task struct {
 	MaxRetries  int
 	LastError   error
 	LockedUntil *time.Time
+	Cron        string
 }
 
 func NewTask(name, refId string, protocol enum.Protocol, address string, params map[string]interface{}, execTime int64,
@@ -49,6 +50,12 @@ func NewTask(name, refId string, protocol enum.Protocol, address string, params 
 
 func (t *Task) SetId(id string) *Task {
 	t.Id = id
+	return t
+}
+
+// SetCron sets the cron expression for a recurring task. Empty means one-shot.
+func (t *Task) SetCron(c string) *Task {
+	t.Cron = c
 	return t
 }
 
@@ -102,6 +109,7 @@ func NewFromDO(do *model.Task) *Task {
 		MaxRetries:  do.MaxRetries,
 		LastError:   lastError,
 		LockedUntil: do.LockedUntil,
+		Cron:        do.Cron,
 	}
 }
 
@@ -129,5 +137,6 @@ func (t *Task) ToDO() *model.Task {
 		MaxRetries:  t.MaxRetries,
 		LastError:   lastErrorStr,
 		LockedUntil: t.LockedUntil,
+		Cron:        t.Cron,
 	}
 }

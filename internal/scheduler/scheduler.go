@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
+	cronpkg "github.com/flametest/taskd/internal/cron"
 	"github.com/flametest/taskd/internal/domain"
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/timingwheel"
@@ -26,6 +27,7 @@ type taskClaimer interface {
 	MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error)
 	MarkDead(ctx context.Context, taskId string, lastError string) error
 	ReclaimOrphans(ctx context.Context, now time.Time) (int64, error)
+	Reschedule(ctx context.Context, taskId string, nextExecTime time.Time) error
 }
 
 // taskRecorder is the narrow slice of repository.TaskRecordRepository the
@@ -45,6 +47,7 @@ type Scheduler struct {
 	recorder taskRecorder
 	wheel    timingwheel.TimingWheel
 	exec     Executor
+	cronLoc  *time.Location
 
 	taskCh   chan *model.Task
 	wg       sync.WaitGroup
@@ -56,14 +59,21 @@ type Scheduler struct {
 }
 
 // NewScheduler constructs a scheduler. repo is typically a repository.TaskRepository
-// (it satisfies the taskClaimer interface).
+// (it satisfies the taskClaimer interface). The cron timezone is loaded from
+// cfg.TimeZone; an invalid name panics (fail-fast) rather than silently falling
+// back to UTC, which would shift every cron schedule.
 func NewScheduler(cfg SchedulerConfig, repo taskClaimer, wheel timingwheel.TimingWheel, exec Executor) *Scheduler {
+	loc, err := time.LoadLocation(cfg.TimeZone)
+	if err != nil {
+		panic(fmt.Sprintf("scheduler: invalid timezone %q: %v", cfg.TimeZone, err))
+	}
 	return &Scheduler{
-		cfg:    cfg,
-		repo:   repo,
-		wheel:  wheel,
-		exec:   exec,
-		taskCh: make(chan *model.Task, cfg.BatchSize),
+		cfg:     cfg,
+		repo:    repo,
+		wheel:   wheel,
+		exec:    exec,
+		cronLoc: loc,
+		taskCh:  make(chan *model.Task, cfg.BatchSize),
 	}
 }
 
@@ -259,6 +269,31 @@ func (s *Scheduler) executeAndFinalize(t *model.Task) {
 			if _, ferr := s.repo.MarkFailure(context.Background(), t.Id, err.Error(), next); ferr != nil {
 				log.Error().Any("error", ferr).Any("task_id", t.Id).Msg("scheduler: mark failure failed")
 			}
+		}
+		return
+	}
+	// On success: a recurring task (Cron set) advances to its next occurrence;
+	// a one-shot task is marked succeeded. next is computed from now (not the
+	// original exec_time) so a slow execution does not pile up catch-up runs.
+	if t.Cron != "" {
+		next, err := cronpkg.Next(t.Cron, time.Now(), s.cronLoc)
+		if err != nil {
+			log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: cron parse failed at runtime -> dead")
+			if derr := s.repo.MarkDead(context.Background(), t.Id, "cron parse error: "+err.Error()); derr != nil {
+				log.Error().Any("error", derr).Any("task_id", t.Id).Msg("scheduler: mark dead failed")
+			}
+			return
+		}
+		if next.IsZero() {
+			log.Error().Any("task_id", t.Id).Msg("scheduler: cron unsatisfiable (no future match) -> dead")
+			if derr := s.repo.MarkDead(context.Background(), t.Id, "cron schedule unsatisfiable"); derr != nil {
+				log.Error().Any("error", derr).Any("task_id", t.Id).Msg("scheduler: mark dead failed")
+			}
+			return
+		}
+		log.Info().Any("task_id", t.Id).Any("next", next).Msg("scheduler: recurring execution succeeded -> rescheduled")
+		if err := s.repo.Reschedule(context.Background(), t.Id, next); err != nil {
+			log.Error().Any("error", err).Any("task_id", t.Id).Msg("scheduler: reschedule failed")
 		}
 		return
 	}

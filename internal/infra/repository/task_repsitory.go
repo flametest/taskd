@@ -52,6 +52,11 @@ type TaskRepository interface {
 	// canceled; a task already claimed (executing) cannot. Returns ConflictError
 	// (rows affected 0) if the task is not scheduled.
 	Cancel(ctx context.Context, taskId string) error
+	// Reschedule advances a claimed recurring task to its next occurrence:
+	// status -> scheduled, attempts reset to 0, last_error cleared, exec_time set
+	// to nextExecTime, lease cleared. Returns ConflictError (rows affected 0) if
+	// the task is not claimed.
+	Reschedule(ctx context.Context, taskId string, nextExecTime time.Time) error
 }
 
 type taskRepositoryImpl struct {
@@ -240,6 +245,23 @@ WHERE id = ? AND status = ?`,
 	}
 	if res.RowsAffected == 0 {
 		return verrors.ConflictError(fmt.Sprintf("task %s not in scheduled state", taskId))
+	}
+	return nil
+}
+
+// Reschedule advances a claimed recurring task to its next occurrence: back to
+// scheduled with attempts/last_error reset and exec_time set to the next tick.
+func (t *taskRepositoryImpl) Reschedule(ctx context.Context, taskId string, nextExecTime time.Time) error {
+	res := t.db.WithContext(ctx).Exec(`
+UPDATE task SET status = ?, attempts = 0, last_error = '', exec_time = ?, locked_until = NULL
+WHERE id = ? AND status = ?`,
+		enum.TaskStatusScheduled, nextExecTime, taskId, enum.TaskStatusClaimed,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return verrors.ConflictError(fmt.Sprintf("task %s not in claimed state", taskId))
 	}
 	return nil
 }

@@ -39,6 +39,7 @@ func setupSQLiteTaskDB(t *testing.T) *gorm.DB {
 			max_retries INTEGER NOT NULL,
 			last_error TEXT,
 			locked_until DATETIME,
+			cron TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			deleted_at DATETIME
@@ -132,5 +133,51 @@ func TestTaskRepository_Cancel(t *testing.T) {
 	// Canceling a claimed (executing) task must fail.
 	if err := repo.Cancel(ctx, "t-claimed"); err == nil {
 		t.Error("Cancel claimed: expected conflict error, got nil")
+	}
+}
+
+func TestTaskRepository_Reschedule(t *testing.T) {
+	db := setupSQLiteTaskDB(t)
+	repo := NewTaskRepository(db)
+	ctx := context.Background()
+
+	claimed := newTask("t-claimed", enum.TaskStatusClaimed)
+	claimed.Attempts = 2
+	claimed.LastError = "boom"
+	if err := db.Create(claimed).Error; err != nil {
+		t.Fatalf("seed claimed: %v", err)
+	}
+	scheduled := newTask("t-scheduled", enum.TaskStatusScheduled)
+	if err := db.Create(scheduled).Error; err != nil {
+		t.Fatalf("seed scheduled: %v", err)
+	}
+
+	next := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	if err := repo.Reschedule(ctx, "t-claimed", next); err != nil {
+		t.Fatalf("Reschedule claimed: %v", err)
+	}
+	var got model.Task
+	if err := db.First(&got, "id = ?", "t-claimed").Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Status != enum.TaskStatusScheduled {
+		t.Errorf("status = %s, want scheduled", got.Status)
+	}
+	if got.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0 (reset on reschedule)", got.Attempts)
+	}
+	if got.LastError != "" {
+		t.Errorf("last_error = %q, want empty (cleared on reschedule)", got.LastError)
+	}
+	if !got.ExecTime.Equal(next) {
+		t.Errorf("exec_time = %v, want %v", got.ExecTime, next)
+	}
+	if got.LockedUntil != nil {
+		t.Errorf("locked_until = %v, want nil (lease cleared)", got.LockedUntil)
+	}
+
+	// Rescheduling a non-claimed task must fail.
+	if err := repo.Reschedule(ctx, "t-scheduled", next); err == nil {
+		t.Error("Reschedule scheduled: expected conflict error, got nil")
 	}
 }

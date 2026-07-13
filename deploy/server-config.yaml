@@ -27,3 +27,4 @@ Scheduler:
   BackoffBase: 1s
   BackoffMaxInterval: 5m
   ReaperInterval: 5s
+  TimeZone: UTC

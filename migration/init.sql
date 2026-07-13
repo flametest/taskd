@@ -13,6 +13,7 @@ CREATE TABLE task
     max_retries BIGINT       NOT NULL,
     last_error  TEXT,
     locked_until TIMESTAMPTZ,
+    cron         VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,

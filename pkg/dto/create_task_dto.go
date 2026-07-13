@@ -14,4 +14,5 @@ type CreateTaskReqBody struct {
 	Params     map[string]interface{} `json:"params"`
 	ExecTime   int64                  `json:"exec_time"`
 	MaxRetries int                    `json:"max_retries"`
+	Cron       string                 `json:"cron" validate:"omitempty,max=64"`
 }

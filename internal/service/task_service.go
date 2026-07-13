@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/flametest/taskd/internal/container"
+	cronpkg "github.com/flametest/taskd/internal/cron"
 	"github.com/flametest/taskd/internal/domain"
 	"github.com/flametest/taskd/internal/infra/model"
 	"github.com/flametest/taskd/pkg/dto"
+	"github.com/flametest/vita/verrors"
 )
 
 type TaskService interface {
@@ -39,8 +42,21 @@ func (t *taskServiceImpl) GetTaskById(ctx context.Context, id string) (*domain.T
 }
 
 func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error) {
+	if req.Body.Cron != "" {
+		if err := cronpkg.Validate(req.Body.Cron); err != nil {
+			return nil, verrors.BadRequestError(fmt.Sprintf("invalid cron: %v", err))
+		}
+		// Cron governs subsequent occurrences; the first run time must be supplied
+		// explicitly (the service does not know the scheduler's timezone to compute it).
+		if req.Body.ExecTime == 0 {
+			return nil, verrors.BadRequestError("exec_time is required for cron tasks")
+		}
+	}
 	task := domain.NewTask(req.Body.Name, req.Body.RefId, req.Body.Protocol, req.Body.Address, req.Body.Params, req.Body.ExecTime,
 		req.Body.MaxRetries)
+	if req.Body.Cron != "" {
+		task.SetCron(req.Body.Cron)
+	}
 	taskDO := task.ToDO()
 	err := t.container.GetRepository().GetTaskRepo().Create(ctx, taskDO)
 	if err != nil {

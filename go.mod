@@ -7,6 +7,7 @@ require (
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/prometheus/client_golang v1.23.2
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.21.0
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11

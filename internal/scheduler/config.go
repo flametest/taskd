@@ -29,6 +29,9 @@ type SchedulerConfig struct {
 	BackoffMaxInterval time.Duration `json:"backoff_max_interval" yaml:"BackoffMaxInterval"`
 	// ReaperInterval is how often the lease-reaper scans for orphaned claimed tasks.
 	ReaperInterval time.Duration `json:"reaper_interval" yaml:"ReaperInterval"`
+	// TimeZone is the timezone cron expressions are evaluated in (IANA name, e.g.
+	// "UTC" or "Asia/Shanghai"). Defaults to "UTC".
+	TimeZone string `json:"time_zone" yaml:"TimeZone"`
 }
 
 func defaultSchedulerConfig() SchedulerConfig {
@@ -46,6 +49,7 @@ func defaultSchedulerConfig() SchedulerConfig {
 		BackoffBase:        1 * time.Second,
 		BackoffMaxInterval: 5 * time.Minute,
 		ReaperInterval:     5 * time.Second,
+		TimeZone:           "UTC",
 	}
 }
 
@@ -92,6 +96,9 @@ func ResolveSchedulerConfig(in SchedulerConfig) SchedulerConfig {
 	}
 	if in.ReaperInterval <= 0 {
 		in.ReaperInterval = d.ReaperInterval
+	}
+	if in.TimeZone == "" {
+		in.TimeZone = d.TimeZone
 	}
 	if in.InstanceID == "" {
 		host, _ := os.Hostname()

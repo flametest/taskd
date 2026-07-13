@@ -21,4 +21,5 @@ type Task struct {
 	MaxRetries  int            `gorm:"column:max_retries"`
 	LastError   string         `gorm:"column:last_error"`
 	LockedUntil *time.Time     `gorm:"column:locked_until"`
+	Cron        string         `gorm:"column:cron"`
 }
