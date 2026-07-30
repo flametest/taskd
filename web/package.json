@@ -1,0 +1,34 @@
+{
+  "name": "taskd-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint --fix .",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@heroui/react": "^2.8.9",
+    "@iconify/react": "^6.0.2",
+    "@tanstack/react-query": "^5.90.21",
+    "framer-motion": "^12.34.5",
+    "next": "16.1.6",
+    "prism-react-renderer": "^2.4.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "prettier": "3.8.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
