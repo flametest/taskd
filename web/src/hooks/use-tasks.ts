@@ -47,7 +47,10 @@ export function useCancelTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.cancelTask(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["task", id] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
   });
 }
 
@@ -56,6 +59,9 @@ export function useReactivateTask() {
   return useMutation({
     mutationFn: ({ id, execTime }: { id: string; execTime?: number }) =>
       api.reactivateTask(id, execTime),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["task", id] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
   });
 }
