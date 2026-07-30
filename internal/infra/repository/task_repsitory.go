@@ -22,6 +22,9 @@ type TaskRepository interface {
 	// by exec_time ascending, with offset pagination. limit is clamped (<=0 or
 	// >maxListLimit -> defaultListLimit). A nil status returns all statuses.
 	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*model.Task, error)
+	// CountTasks returns the total number of tasks, optionally filtered by
+	// status. Used with ListTasks for pagination metadata (total/pages).
+	CountTasks(ctx context.Context, status *enum.Status) (int64, error)
 	// Claim atomically claims up to batchSize scheduled tasks whose exec_time is
 	// within now+lookahead, flipping them to 'claimed' and setting locked_until to
 	// now+lease. It runs SELECT ... FOR UPDATE SKIP LOCKED -> UPDATE inside one
@@ -111,6 +114,16 @@ func (t *taskRepositoryImpl) ListTasks(ctx context.Context, status *enum.Status,
 	}
 	var out []*model.Task
 	return out, q.Find(&out).Error
+}
+
+// CountTasks returns the total number of tasks, optionally filtered by status.
+func (t *taskRepositoryImpl) CountTasks(ctx context.Context, status *enum.Status) (int64, error) {
+	q := t.db.WithContext(ctx).Model(&model.Task{})
+	if status != nil {
+		q = q.Where("status = ?", *status)
+	}
+	var n int64
+	return n, q.Count(&n).Error
 }
 
 // Claim selects due scheduled rows with FOR UPDATE SKIP LOCKED, then updates them

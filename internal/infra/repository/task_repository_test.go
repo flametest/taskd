@@ -248,3 +248,35 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 		t.Errorf("page = %v, want [s2]", page)
 	}
 }
+
+func TestTaskRepository_CountTasks(t *testing.T) {
+	db := setupSQLiteTaskDB(t)
+	repo := NewTaskRepository(db)
+	ctx := context.Background()
+
+	for _, tk := range []*model.Task{
+		newTask("s1", enum.TaskStatusScheduled),
+		newTask("s2", enum.TaskStatusScheduled),
+		newTask("d1", enum.TaskStatusDead),
+	} {
+		if err := db.Create(tk).Error; err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	n, err := repo.CountTasks(ctx, nil)
+	if err != nil {
+		t.Fatalf("CountTasks all: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("total = %d, want 3", n)
+	}
+	scheduledStatus := enum.Status(enum.TaskStatusScheduled)
+	n, err = repo.CountTasks(ctx, &scheduledStatus)
+	if err != nil {
+		t.Fatalf("CountTasks scheduled: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("scheduled = %d, want 2", n)
+	}
+}

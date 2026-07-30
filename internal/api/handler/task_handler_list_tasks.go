@@ -18,9 +18,9 @@ func (t *TaskHandler) ListTasks(c echo.Context) error {
 		st := enum.Status(s)
 		status = &st
 	}
-	tasks, err := t.taskService.ListTasks(c.Request().Context(), status, limit, offset)
+	tasks, total, err := t.taskService.ListTasks(c.Request().Context(), status, limit, offset)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, dto.ListTasksResp{Tasks: converter.ToTasks(tasks), Limit: limit, Offset: offset})
+	return c.JSON(http.StatusOK, dto.ListTasksResp{Tasks: converter.ToTasks(tasks), Total: total, Limit: limit, Offset: offset})
 }

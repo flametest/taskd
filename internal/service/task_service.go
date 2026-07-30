@@ -17,7 +17,7 @@ import (
 type TaskService interface {
 	GetTaskById(ctx context.Context, id string) (*domain.Task, error)
 	CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error)
-	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, error)
+	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, int64, error)
 	ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error)
 	// ReactivateTask reactivates a dead task, re-scheduling it at execTime (or
 	// now when nil). Returns ConflictError if the task is not in dead status.
@@ -69,16 +69,20 @@ func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq)
 	return task, nil
 }
 
-func (t *taskServiceImpl) ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, error) {
+func (t *taskServiceImpl) ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, int64, error) {
 	tasks, err := t.container.GetRepository().GetTaskRepo().ListTasks(ctx, status, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	total, err := t.container.GetRepository().GetTaskRepo().CountTasks(ctx, status)
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]*domain.Task, 0, len(tasks))
 	for _, taskDO := range tasks {
 		out = append(out, domain.NewFromDO(taskDO))
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (t *taskServiceImpl) ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error) {

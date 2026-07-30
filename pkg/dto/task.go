@@ -28,6 +28,7 @@ type Task struct {
 // ListTasksResp is the response of GET /v1/tasks.
 type ListTasksResp struct {
 	Tasks  []*Task `json:"tasks"`
+	Total  int64   `json:"total"`
 	Limit  int     `json:"limit"`
 	Offset int     `json:"offset"`
 }
