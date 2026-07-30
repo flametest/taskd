@@ -18,6 +18,10 @@ type TaskRepository interface {
 	// GetTasksByStatus returns up to limit tasks in the given status ordered by
 	// exec_time ascending. Mostly a test/inspection helper.
 	GetTasksByStatus(ctx context.Context, status enum.Status, limit int) ([]*model.Task, error)
+	// ListTasks returns up to limit tasks optionally filtered by status, ordered
+	// by exec_time ascending, with offset pagination. limit is clamped (<=0 or
+	// >maxListLimit -> defaultListLimit). A nil status returns all statuses.
+	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*model.Task, error)
 	// Claim atomically claims up to batchSize scheduled tasks whose exec_time is
 	// within now+lookahead, flipping them to 'claimed' and setting locked_until to
 	// now+lease. It runs SELECT ... FOR UPDATE SKIP LOCKED -> UPDATE inside one
@@ -90,6 +94,23 @@ func (t *taskRepositoryImpl) GetTasksByStatus(ctx context.Context, status enum.S
 		Limit(limit).
 		Find(&out).Error
 	return out, err
+}
+
+// ListTasks returns up to limit tasks optionally filtered by status, ordered by
+// exec_time ascending, with offset pagination.
+func (t *taskRepositoryImpl) ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*model.Task, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	q := t.db.WithContext(ctx).Order("exec_time ASC").Limit(limit).Offset(offset)
+	if status != nil {
+		q = q.Where("status = ?", *status)
+	}
+	var out []*model.Task
+	return out, q.Find(&out).Error
 }
 
 // Claim selects due scheduled rows with FOR UPDATE SKIP LOCKED, then updates them

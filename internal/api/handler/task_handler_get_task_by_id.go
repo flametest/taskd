@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/flametest/taskd/internal/api/handler/converter"
 	"github.com/flametest/vita/verrors"
 	"github.com/labstack/echo/v4"
 )
@@ -18,5 +19,5 @@ func (t *TaskHandler) GetTaskById(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, task)
+	return c.JSON(http.StatusOK, converter.ToTask(task))
 }

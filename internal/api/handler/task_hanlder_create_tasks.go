@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/flametest/taskd/internal/api/handler/converter"
 	"github.com/flametest/taskd/pkg/dto"
 	"github.com/flametest/vita/verrors"
 	"github.com/go-playground/validator/v10"
@@ -25,5 +26,5 @@ func (t *TaskHandler) CreateTasks(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, task)
+	return c.JSON(http.StatusCreated, converter.ToTask(task))
 }

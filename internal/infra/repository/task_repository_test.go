@@ -198,3 +198,53 @@ func TestTaskRepository_Reschedule(t *testing.T) {
 		t.Error("Reschedule scheduled: expected conflict error, got nil")
 	}
 }
+
+func TestTaskRepository_ListTasks(t *testing.T) {
+	db := setupSQLiteTaskDB(t)
+	repo := NewTaskRepository(db)
+	ctx := context.Background()
+
+	// Seed: scheduled (earlier), scheduled (later), dead -- out of insertion order.
+	s1 := newTask("s1", enum.TaskStatusScheduled)
+	s1.ExecTime = time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	s2 := newTask("s2", enum.TaskStatusScheduled)
+	s2.ExecTime = time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+	dead := newTask("d1", enum.TaskStatusDead)
+	dead.ExecTime = time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	for _, tk := range []*model.Task{dead, s2, s1} {
+		if err := db.Create(tk).Error; err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	// No filter: all 3 ordered by exec_time asc (s1, s2, d1).
+	all, err := repo.ListTasks(ctx, nil, 0, 0)
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("len = %d, want 3", len(all))
+	}
+	if all[0].Id != "s1" || all[1].Id != "s2" || all[2].Id != "d1" {
+		t.Errorf("order = %s,%s,%s, want s1,s2,d1", all[0].Id, all[1].Id, all[2].Id)
+	}
+
+	// Filter by status=scheduled.
+	scheduledStatus := enum.Status(enum.TaskStatusScheduled)
+	filtered, err := repo.ListTasks(ctx, &scheduledStatus, 0, 0)
+	if err != nil {
+		t.Fatalf("ListTasks scheduled: %v", err)
+	}
+	if len(filtered) != 2 {
+		t.Errorf("scheduled len = %d, want 2", len(filtered))
+	}
+
+	// Pagination: limit=1, offset=1 -> second task (s2).
+	page, err := repo.ListTasks(ctx, nil, 1, 1)
+	if err != nil {
+		t.Fatalf("ListTasks limit/offset: %v", err)
+	}
+	if len(page) != 1 || page[0].Id != "s2" {
+		t.Errorf("page = %v, want [s2]", page)
+	}
+}
