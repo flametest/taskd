@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flametest/taskd/internal/constant/enum"
@@ -12,19 +13,28 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// TaskFilter narrows ListTasks/CountTasks by status, a free-text search across
+// name and ref_id (case-insensitive), and a created_at range. All fields optional.
+type TaskFilter struct {
+	Status      *enum.Status
+	Search      string
+	CreatedFrom *time.Time
+	CreatedTo   *time.Time
+}
+
 type TaskRepository interface {
 	Create(ctx context.Context, task *model.Task) error
 	GetTaskById(ctx context.Context, taskId string) (*model.Task, error)
 	// GetTasksByStatus returns up to limit tasks in the given status ordered by
 	// exec_time ascending. Mostly a test/inspection helper.
 	GetTasksByStatus(ctx context.Context, status enum.Status, limit int) ([]*model.Task, error)
-	// ListTasks returns up to limit tasks optionally filtered by status, ordered
-	// by exec_time ascending, with offset pagination. limit is clamped (<=0 or
-	// >maxListLimit -> defaultListLimit). A nil status returns all statuses.
-	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*model.Task, error)
-	// CountTasks returns the total number of tasks, optionally filtered by
-	// status. Used with ListTasks for pagination metadata (total/pages).
-	CountTasks(ctx context.Context, status *enum.Status) (int64, error)
+	// ListTasks returns up to limit tasks matching filter, ordered by exec_time
+	// ascending, with offset pagination. limit is clamped (<=0 or >maxListLimit
+	// -> defaultListLimit).
+	ListTasks(ctx context.Context, filter TaskFilter, limit, offset int) ([]*model.Task, error)
+	// CountTasks returns the number of tasks matching filter. Used with ListTasks
+	// for pagination metadata (total/pages).
+	CountTasks(ctx context.Context, filter TaskFilter) (int64, error)
 	// Claim atomically claims up to batchSize scheduled tasks whose exec_time is
 	// within now+lookahead, flipping them to 'claimed' and setting locked_until to
 	// now+lease. It runs SELECT ... FOR UPDATE SKIP LOCKED -> UPDATE inside one
@@ -99,31 +109,44 @@ func (t *taskRepositoryImpl) GetTasksByStatus(ctx context.Context, status enum.S
 	return out, err
 }
 
-// ListTasks returns up to limit tasks optionally filtered by status, ordered by
-// exec_time ascending, with offset pagination.
-func (t *taskRepositoryImpl) ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*model.Task, error) {
+// ListTasks returns up to limit tasks matching filter, ordered by exec_time
+// ascending, with offset pagination.
+func (t *taskRepositoryImpl) ListTasks(ctx context.Context, filter TaskFilter, limit, offset int) ([]*model.Task, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	q := t.db.WithContext(ctx).Order("exec_time ASC").Limit(limit).Offset(offset)
-	if status != nil {
-		q = q.Where("status = ?", *status)
-	}
+	q := applyTaskFilter(t.db.WithContext(ctx).Order("exec_time ASC").Limit(limit).Offset(offset), filter)
 	var out []*model.Task
 	return out, q.Find(&out).Error
 }
 
-// CountTasks returns the total number of tasks, optionally filtered by status.
-func (t *taskRepositoryImpl) CountTasks(ctx context.Context, status *enum.Status) (int64, error) {
-	q := t.db.WithContext(ctx).Model(&model.Task{})
-	if status != nil {
-		q = q.Where("status = ?", *status)
-	}
+// CountTasks returns the number of tasks matching filter.
+func (t *taskRepositoryImpl) CountTasks(ctx context.Context, filter TaskFilter) (int64, error) {
+	q := applyTaskFilter(t.db.WithContext(ctx).Model(&model.Task{}), filter)
 	var n int64
 	return n, q.Count(&n).Error
+}
+
+// applyTaskFilter adds the optional filter clauses (status, name/ref_id search,
+// created_at range) to a task query.
+func applyTaskFilter(q *gorm.DB, f TaskFilter) *gorm.DB {
+	if f.Status != nil {
+		q = q.Where("status = ?", *f.Status)
+	}
+	if s := strings.TrimSpace(f.Search); s != "" {
+		like := "%" + strings.ToLower(s) + "%"
+		q = q.Where("LOWER(name) LIKE ? OR LOWER(ref_id) LIKE ?", like, like)
+	}
+	if f.CreatedFrom != nil {
+		q = q.Where("created_at >= ?", *f.CreatedFrom)
+	}
+	if f.CreatedTo != nil {
+		q = q.Where("created_at <= ?", *f.CreatedTo)
+	}
+	return q
 }
 
 // Claim selects due scheduled rows with FOR UPDATE SKIP LOCKED, then updates them

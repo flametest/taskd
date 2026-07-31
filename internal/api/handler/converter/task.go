@@ -33,6 +33,7 @@ func ToTask(t *domain.Task) *dto.Task {
 		LastError:   lastError,
 		LockedUntil: t.LockedUntil,
 		Cron:        t.Cron,
+		CreatedAt:   t.CreatedAt,
 	}
 }
 

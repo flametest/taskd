@@ -27,6 +27,7 @@ type Task struct {
 	LastError   error
 	LockedUntil *time.Time
 	Cron        string
+	CreatedAt   time.Time
 }
 
 func NewTask(name, refId string, protocol enum.Protocol, address string, params map[string]interface{}, execTime int64,
@@ -110,6 +111,7 @@ func NewFromDO(do *model.Task) *Task {
 		LastError:   lastError,
 		LockedUntil: do.LockedUntil,
 		Cron:        do.Cron,
+		CreatedAt:   do.CreatedAt,
 	}
 }
 

@@ -218,7 +218,7 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 	}
 
 	// No filter: all 3 ordered by exec_time asc (s1, s2, d1).
-	all, err := repo.ListTasks(ctx, nil, 0, 0)
+	all, err := repo.ListTasks(ctx, TaskFilter{}, 0, 0)
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 
 	// Filter by status=scheduled.
 	scheduledStatus := enum.Status(enum.TaskStatusScheduled)
-	filtered, err := repo.ListTasks(ctx, &scheduledStatus, 0, 0)
+	filtered, err := repo.ListTasks(ctx, TaskFilter{Status: &scheduledStatus}, 0, 0)
 	if err != nil {
 		t.Fatalf("ListTasks scheduled: %v", err)
 	}
@@ -239,8 +239,17 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 		t.Errorf("scheduled len = %d, want 2", len(filtered))
 	}
 
+	// Search by ref_id: "s" matches s1 and s2 (ref_id), not d1.
+	searched, err := repo.ListTasks(ctx, TaskFilter{Search: "s"}, 0, 0)
+	if err != nil {
+		t.Fatalf("ListTasks search: %v", err)
+	}
+	if len(searched) != 2 {
+		t.Errorf("search 's' len = %d, want 2", len(searched))
+	}
+
 	// Pagination: limit=1, offset=1 -> second task (s2).
-	page, err := repo.ListTasks(ctx, nil, 1, 1)
+	page, err := repo.ListTasks(ctx, TaskFilter{}, 1, 1)
 	if err != nil {
 		t.Fatalf("ListTasks limit/offset: %v", err)
 	}
@@ -264,7 +273,7 @@ func TestTaskRepository_CountTasks(t *testing.T) {
 		}
 	}
 
-	n, err := repo.CountTasks(ctx, nil)
+	n, err := repo.CountTasks(ctx, TaskFilter{})
 	if err != nil {
 		t.Fatalf("CountTasks all: %v", err)
 	}
@@ -272,7 +281,7 @@ func TestTaskRepository_CountTasks(t *testing.T) {
 		t.Errorf("total = %d, want 3", n)
 	}
 	scheduledStatus := enum.Status(enum.TaskStatusScheduled)
-	n, err = repo.CountTasks(ctx, &scheduledStatus)
+	n, err = repo.CountTasks(ctx, TaskFilter{Status: &scheduledStatus})
 	if err != nil {
 		t.Fatalf("CountTasks scheduled: %v", err)
 	}

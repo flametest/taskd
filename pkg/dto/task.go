@@ -23,6 +23,7 @@ type Task struct {
 	LastError   string                 `json:"last_error"`
 	LockedUntil *time.Time             `json:"locked_until"`
 	Cron        string                 `json:"cron"`
+	CreatedAt   time.Time              `json:"created_at"`
 }
 
 // ListTasksResp is the response of GET /v1/tasks.

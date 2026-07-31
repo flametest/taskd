@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flametest/taskd/internal/constant/enum"
 	"github.com/flametest/taskd/internal/container"
 	cronpkg "github.com/flametest/taskd/internal/cron"
 	"github.com/flametest/taskd/internal/domain"
 	"github.com/flametest/taskd/internal/infra/model"
+	"github.com/flametest/taskd/internal/infra/repository"
 	"github.com/flametest/taskd/pkg/dto"
 	"github.com/flametest/vita/verrors"
 )
@@ -17,7 +17,7 @@ import (
 type TaskService interface {
 	GetTaskById(ctx context.Context, id string) (*domain.Task, error)
 	CreateTask(ctx context.Context, req *dto.CreatTaskReq) (*domain.Task, error)
-	ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, int64, error)
+	ListTasks(ctx context.Context, filter repository.TaskFilter, limit, offset int) ([]*domain.Task, int64, error)
 	ListTaskRecords(ctx context.Context, taskId string, limit, offset int) ([]*model.TaskRecord, error)
 	// ReactivateTask reactivates a dead task, re-scheduling it at execTime (or
 	// now when nil). Returns ConflictError if the task is not in dead status.
@@ -69,12 +69,12 @@ func (t *taskServiceImpl) CreateTask(ctx context.Context, req *dto.CreatTaskReq)
 	return task, nil
 }
 
-func (t *taskServiceImpl) ListTasks(ctx context.Context, status *enum.Status, limit, offset int) ([]*domain.Task, int64, error) {
-	tasks, err := t.container.GetRepository().GetTaskRepo().ListTasks(ctx, status, limit, offset)
+func (t *taskServiceImpl) ListTasks(ctx context.Context, filter repository.TaskFilter, limit, offset int) ([]*domain.Task, int64, error) {
+	tasks, err := t.container.GetRepository().GetTaskRepo().ListTasks(ctx, filter, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := t.container.GetRepository().GetTaskRepo().CountTasks(ctx, status)
+	total, err := t.container.GetRepository().GetTaskRepo().CountTasks(ctx, filter)
 	if err != nil {
 		return nil, 0, err
 	}

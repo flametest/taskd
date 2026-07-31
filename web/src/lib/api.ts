@@ -32,8 +32,14 @@ function withQuery(params: Record<string, string | number | undefined>): string 
 }
 
 export const api = {
-  listTasks: (params: { status?: string; limit?: number; offset?: number }) =>
-    request<ListTasksResp>(`/tasks${withQuery(params)}`),
+  listTasks: (params: {
+    status?: string;
+    search?: string;
+    created_from?: string;
+    created_to?: string;
+    limit?: number;
+    offset?: number;
+  }) => request<ListTasksResp>(`/tasks${withQuery(params)}`),
   getTask: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (body: CreateTaskReq) =>
     request<Task>(`/tasks`, { method: "POST", body: JSON.stringify(body) }),

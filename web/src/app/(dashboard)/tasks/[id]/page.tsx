@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { Button, Card, CardBody, Chip } from "@heroui/react";
+import { Accordion, AccordionItem, Button, Card, CardBody, Chip } from "@heroui/react";
 import {
   useCancelTask,
   useReactivateTask,
@@ -77,10 +77,12 @@ export default function TaskDetailPage() {
       </Card>
 
       <h2 className="text-lg font-semibold">Execution Records</h2>
-      <div className="flex flex-col gap-2">
+      <Accordion selectionMode="multiple" variant="splitted">
         {(recordsData?.records ?? []).map((r) => (
-          <Card key={r.id}>
-            <CardBody className="flex flex-col gap-1 text-sm">
+          <AccordionItem
+            key={r.id}
+            aria-label={`record-${r.id}`}
+            title={
               <div className="flex items-center gap-2">
                 <Chip
                   size="sm"
@@ -90,21 +92,55 @@ export default function TaskDetailPage() {
                   {r.result}
                 </Chip>
                 <span className="text-default-500">attempt #{r.attempt}</span>
-                <span className="text-default-400">
+                <span className="text-default-400 text-xs">
                   {new Date(r.started_at).toLocaleString()}
                 </span>
-                <span className="text-default-400">{r.duration_ms}ms</span>
+                <span className="text-default-400 text-xs">{r.duration_ms}ms</span>
+              </div>
+            }
+          >
+            <div className="flex flex-col gap-1 text-xs">
+              <div>
+                <span className="text-default-400">Started: </span>
+                {new Date(r.started_at).toLocaleString()}
+              </div>
+              <div>
+                <span className="text-default-400">Finished: </span>
+                {new Date(r.finished_at).toLocaleString()}
+              </div>
+              <div>
+                <span className="text-default-400">Duration: </span>
+                {r.duration_ms}ms
+              </div>
+              <div>
+                <span className="text-default-400">Instance: </span>
+                <span className="font-mono">{r.instance_id}</span>
+              </div>
+              <div>
+                <span className="text-default-400">Protocol: </span>
+                {r.protocol}
               </div>
               {r.error_message && (
-                <span className="text-danger text-xs">{r.error_message}</span>
+                <div className="text-danger">
+                  <span>Error: </span>
+                  {r.error_message}
+                </div>
               )}
-            </CardBody>
-          </Card>
+              {r.response != null && (
+                <div>
+                  <span className="text-default-400">Response: </span>
+                  <pre className="mt-1 overflow-x-auto rounded bg-default-100 p-2">
+                    {JSON.stringify(r.response, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </AccordionItem>
         ))}
-        {recordsData && recordsData.records.length === 0 && (
-          <span className="text-default-400 text-sm">No executions yet</span>
-        )}
-      </div>
+      </Accordion>
+      {recordsData && recordsData.records.length === 0 && (
+        <span className="text-default-400 text-sm">No executions yet</span>
+      )}
     </div>
   );
 }

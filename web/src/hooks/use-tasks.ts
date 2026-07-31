@@ -5,6 +5,9 @@ import { api } from "@/lib/api";
 
 export function useTasks(params: {
   status?: string;
+  search?: string;
+  createdFrom?: string;
+  createdTo?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -12,9 +15,24 @@ export function useTasks(params: {
   const page = params.page ?? 1;
   const offset = (page - 1) * pageSize;
   return useQuery({
-    queryKey: ["tasks", params.status, page, pageSize],
+    queryKey: [
+      "tasks",
+      params.status,
+      params.search,
+      params.createdFrom,
+      params.createdTo,
+      page,
+      pageSize,
+    ],
     queryFn: () =>
-      api.listTasks({ status: params.status, limit: pageSize, offset }),
+      api.listTasks({
+        status: params.status,
+        search: params.search,
+        created_from: params.createdFrom,
+        created_to: params.createdTo,
+        limit: pageSize,
+        offset,
+      }),
   });
 }
 

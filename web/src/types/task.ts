@@ -27,6 +27,7 @@ export type Task = {
   last_error: string;
   locked_until: string | null;
   cron: string;
+  created_at: string;
 };
 
 export type TaskRecord = {
