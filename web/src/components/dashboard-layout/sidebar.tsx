@@ -20,7 +20,7 @@ export type SidebarSection = {
 export function Sidebar({ sections }: { sections: SidebarSection[] }) {
   const pathname = usePathname();
   return (
-    <aside className="h-full w-60 shrink-0 overflow-y-auto border-r border-default-200 bg-content1 p-4">
+    <aside className="h-full w-50 shrink-0 overflow-y-auto border-r border-default-200 bg-content1 p-4">
       <div className="mb-6 px-2 text-lg font-bold text-primary">taskd</div>
       <nav className="flex flex-col gap-6">
         {sections.map((section) => (

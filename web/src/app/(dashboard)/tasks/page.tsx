@@ -9,15 +9,11 @@ import {
   Pagination,
   Select,
   SelectItem,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useTasks } from "@/hooks/use-tasks";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import type { Task } from "@/types/task";
 import { CreateTaskModal } from "./create-modal";
 
 const STATUS_OPTIONS = [
@@ -39,27 +35,97 @@ const STATUS_COLOR: Record<string, "default" | "primary" | "success" | "warning"
   canceled: "default",
 };
 
-const PAGE_SIZE = 20;
+const TIME_PRESETS = [
+  { key: "1h", label: "1H" },
+  { key: "today", label: "Today" },
+  { key: "custom", label: "Custom" },
+] as const;
+
+type TimePreset = (typeof TIME_PRESETS)[number]["key"];
+
+function getPresetTimeRange(preset: "1h" | "today"): { start: Date; end: Date } {
+  const now = new Date();
+  switch (preset) {
+    case "1h":
+      return { start: new Date(now.getTime() - 60 * 60 * 1000), end: now };
+    case "today": {
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      return { start, end: now };
+    }
+  }
+}
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+const COLUMNS: DataTableColumn<Task>[] = [
+  { key: "id", label: "ID", render: (t) => <span className="font-mono text-xs">{t.id.slice(0, 8)}</span> },
+  { key: "name", label: "NAME" },
+  { key: "ref_id", label: "REF ID", render: (t) => <span className="font-mono text-xs">{t.ref_id}</span> },
+  { key: "protocol", label: "PROTOCOL" },
+  {
+    key: "status",
+    label: "STATUS",
+    render: (t) => (
+      <Chip size="sm" color={STATUS_COLOR[t.status]} variant="flat">
+        {t.status}
+      </Chip>
+    ),
+  },
+  { key: "attempts", label: "ATTEMPTS", render: (t) => `${t.attempts}/${t.max_retries}` },
+  {
+    key: "exec_time",
+    label: "NEXT EXEC",
+    render: (t) => (
+      <span className="text-xs">
+        {t.exec_time ? new Date(t.exec_time).toLocaleString() : "-"}
+      </span>
+    ),
+  },
+  { key: "cron", label: "CRON", render: (t) => <span className="font-mono text-xs">{t.cron || "-"}</span> },
+  {
+    key: "created_at",
+    label: "CREATED",
+    render: (t) => (
+      <span className="text-xs">
+        {t.created_at ? new Date(t.created_at).toLocaleString() : "-"}
+      </span>
+    ),
+  },
+];
 
 export default function TasksPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [createdFrom, setCreatedFrom] = useState("");
-  const [createdTo, setCreatedTo] = useState("");
+  const [timePreset, setTimePreset] = useState<TimePreset | "">("");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [createOpen, setCreateOpen] = useState(false);
-  const fromRfc = createdFrom ? new Date(createdFrom + "T00:00:00").toISOString() : undefined;
-  const toRfc = createdTo ? new Date(createdTo + "T23:59:59").toISOString() : undefined;
+
+  let fromRfc: string | undefined;
+  let toRfc: string | undefined;
+  if (timePreset === "1h" || timePreset === "today") {
+    const { start, end } = getPresetTimeRange(timePreset);
+    fromRfc = start.toISOString();
+    toRfc = end.toISOString();
+  } else if (timePreset === "custom") {
+    fromRfc = customStart ? new Date(customStart).toISOString() : undefined;
+    toRfc = customEnd ? new Date(customEnd).toISOString() : undefined;
+  }
+
   const { data, isLoading } = useTasks({
     search: search || undefined,
     status: status || undefined,
     createdFrom: fromRfc,
     createdTo: toRfc,
     page,
-    pageSize: PAGE_SIZE,
+    pageSize,
   });
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -71,101 +137,120 @@ export default function TasksPage() {
       </div>
       <CreateTaskModal isOpen={createOpen} onClose={() => setCreateOpen(false)} />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          className="max-w-xs"
-          placeholder="Search name or ref_id..."
-          size="sm"
-          value={search}
-          onValueChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-        />
-        <Select
-          className="max-w-[160px]"
-          size="sm"
-          selectedKeys={[status]}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-        >
-          {STATUS_OPTIONS.map((o) => (
-            <SelectItem key={o.value}>{o.label}</SelectItem>
-          ))}
-        </Select>
-        <Input
-          type="date"
-          className="max-w-[150px]"
-          size="sm"
-          value={createdFrom}
-          onValueChange={(v) => {
-            setCreatedFrom(v);
-            setPage(1);
-          }}
-        />
-        <span className="text-default-400 text-sm">to</span>
-        <Input
-          type="date"
-          className="max-w-[150px]"
-          size="sm"
-          value={createdTo}
-          onValueChange={(v) => {
-            setCreatedTo(v);
-            setPage(1);
-          }}
-        />
-        {data && <span className="text-default-400 text-sm">{data.total} total</span>}
-      </div>
-
-      <Table
-        aria-label="tasks"
-        onRowAction={(key) => router.push(`/tasks/${String(key)}`)}
-      >
-        <TableHeader>
-          <TableColumn>ID</TableColumn>
-          <TableColumn>NAME</TableColumn>
-          <TableColumn>REF ID</TableColumn>
-          <TableColumn>PROTOCOL</TableColumn>
-          <TableColumn>STATUS</TableColumn>
-          <TableColumn>ATTEMPTS</TableColumn>
-          <TableColumn>NEXT EXEC</TableColumn>
-          <TableColumn>CRON</TableColumn>
-          <TableColumn>CREATED</TableColumn>
-        </TableHeader>
-        <TableBody
-          items={data?.tasks ?? []}
-          isLoading={isLoading}
-          emptyContent="No tasks"
-        >
-          {(task) => (
-            <TableRow key={task.id} className="cursor-pointer">
-              <TableCell className="font-mono text-xs">{task.id.slice(0, 8)}</TableCell>
-              <TableCell>{task.name}</TableCell>
-              <TableCell className="font-mono text-xs">{task.ref_id}</TableCell>
-              <TableCell>{task.protocol}</TableCell>
-              <TableCell>
-                <Chip size="sm" color={STATUS_COLOR[task.status]} variant="flat">
-                  {task.status}
-                </Chip>
-              </TableCell>
-              <TableCell>{`${task.attempts}/${task.max_retries}`}</TableCell>
-              <TableCell className="text-xs">
-                {task.exec_time ? new Date(task.exec_time).toLocaleString() : "-"}
-              </TableCell>
-              <TableCell className="font-mono text-xs">{task.cron || "-"}</TableCell>
-              <TableCell className="text-xs">
-                {task.created_at ? new Date(task.created_at).toLocaleString() : "-"}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-
-      <div className="flex justify-center">
-        <Pagination total={totalPages} page={page} onChange={setPage} />
-      </div>
+      <DataTable
+        columns={COLUMNS}
+        data={data?.tasks ?? []}
+        keyExtractor={(t) => t.id}
+        isLoading={isLoading}
+        emptyMessage="No tasks"
+        onRowClick={(t) => router.push(`/tasks/${t.id}`)}
+        headerAction={
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
+            <div className="flex gap-1">
+              {TIME_PRESETS.map((preset) => (
+                <Button
+                  key={preset.key}
+                  size="sm"
+                  variant={timePreset === preset.key ? "solid" : "flat"}
+                  color={timePreset === preset.key ? "primary" : "default"}
+                  onPress={() => {
+                    setTimePreset(timePreset === preset.key ? "" : preset.key);
+                    setPage(1);
+                  }}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+            {timePreset === "custom" && (
+              <>
+                <input
+                  type="datetime-local"
+                  className="h-8 rounded-lg border border-default-200 bg-default-100 px-2 text-xs outline-none focus:border-primary"
+                  value={customStart}
+                  onChange={(e) => {
+                    setCustomStart(e.target.value);
+                    setPage(1);
+                  }}
+                />
+                <span className="text-xs text-default-400">-</span>
+                <input
+                  type="datetime-local"
+                  className="h-8 rounded-lg border border-default-200 bg-default-100 px-2 text-xs outline-none focus:border-primary"
+                  value={customEnd}
+                  onChange={(e) => {
+                    setCustomEnd(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </>
+            )}
+            <Select
+              className="max-w-[160px]"
+              size="sm"
+              selectedKeys={[status]}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <SelectItem key={o.value}>{o.label}</SelectItem>
+              ))}
+            </Select>
+            <Input
+              className="max-w-[200px]"
+              placeholder="Search name or ref_id..."
+              size="sm"
+              value={search}
+              onValueChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+            />
+            <span className="text-default-400 ml-2 text-sm">
+              {total} {total === 1 ? "task" : "tasks"}
+            </span>
+          </div>
+        }
+        footer={
+          <div className="flex items-center justify-between px-4 py-2">
+            <div className="flex items-center gap-2 text-xs text-default-500">
+              <Select
+                size="sm"
+                className="w-20"
+                aria-label="Page size"
+                selectedKeys={[String(pageSize)]}
+                onSelectionChange={(keys) => {
+                  const val = Number(Array.from(keys)[0]);
+                  if (val) {
+                    setPageSize(val);
+                    setPage(1);
+                  }
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={String(size)}>{String(size)}</SelectItem>
+                ))}
+              </Select>
+              <span>per page</span>
+              <span className="text-default-400">|</span>
+              <span>
+                Page {page} of {totalPages}
+              </span>
+            </div>
+            {totalPages > 1 && (
+              <Pagination
+                size="sm"
+                total={totalPages}
+                page={page}
+                onChange={setPage}
+                showControls
+              />
+            )}
+          </div>
+        }
+      />
     </div>
   );
 }
