@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/flametest/taskd/internal/api/handler/converter"
 	"github.com/flametest/taskd/pkg/dto"
 	"github.com/flametest/vita/verrors"
 	"github.com/labstack/echo/v4"
@@ -22,7 +23,7 @@ func (t *TaskHandler) ListTaskRecords(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, dto.ListTaskRecordsResp{
-		Records: records,
+		Records: converter.ToTaskRecords(records),
 		Limit:   limit,
 		Offset:  offset,
 	})
