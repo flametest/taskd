@@ -118,7 +118,7 @@ func (t *taskRepositoryImpl) ListTasks(ctx context.Context, filter TaskFilter, l
 	if offset < 0 {
 		offset = 0
 	}
-	q := applyTaskFilter(t.db.WithContext(ctx).Order("exec_time ASC").Limit(limit).Offset(offset), filter)
+	q := applyTaskFilter(t.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Offset(offset), filter)
 	var out []*model.Task
 	return out, q.Find(&out).Error
 }
@@ -226,8 +226,8 @@ func (t *taskRepositoryImpl) MarkFailure(ctx context.Context, taskId string, las
 UPDATE task SET
   attempts = attempts + 1,
   last_error = ?,
-  status = CASE WHEN attempts + 1 > max_retries THEN ? ELSE ? END,
-  exec_time = CASE WHEN attempts + 1 > max_retries THEN exec_time ELSE ? END,
+  status = CASE WHEN attempts + 1 >= max_retries THEN ? ELSE ? END,
+  exec_time = CASE WHEN attempts + 1 >= max_retries THEN exec_time ELSE ? END,
   locked_until = NULL
 WHERE id = ? AND status = ?`,
 		lastError,

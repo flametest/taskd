@@ -104,7 +104,7 @@ func (f *fakeRepo) MarkFailure(ctx context.Context, taskId string, lastError str
 	t.Attempts++
 	t.LastError = lastError
 	t.LockedUntil = nil
-	if t.Attempts > t.MaxRetries {
+	if t.Attempts >= t.MaxRetries {
 		t.Status = enum.TaskStatusDead
 	} else {
 		t.Status = enum.TaskStatusScheduled
@@ -448,16 +448,16 @@ func TestScheduler_ExecutorError_RetriesToDead(t *testing.T) {
 	cfg.BackoffBase = 5 * time.Millisecond
 	cfg.BackoffMaxInterval = 20 * time.Millisecond
 	s, cancel := startScheduler(t, cfg, repo, rec)
-	// attempts: 0->1 (retry), 1->2 (retry), 2->3 (>2 -> dead): 3 executions total.
-	waitExec(t, rec, 3, 2*time.Second)
+	// attempts: 0->1 (retry), 1->2 (>=2 -> dead): 2 executions total.
+	waitExec(t, rec, 2, 2*time.Second)
 	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
 	cancel()
 	s.Stop()
 	if task.Status != enum.TaskStatusDead {
 		t.Errorf("status = %s, want dead", task.Status)
 	}
-	if task.Attempts != 3 {
-		t.Errorf("attempts = %d, want 3", task.Attempts)
+	if task.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2", task.Attempts)
 	}
 	if task.LastError == "" {
 		t.Error("last_error is empty, want the failure reason")
@@ -693,13 +693,13 @@ func TestScheduler_RecordsAllRetriesToDead(t *testing.T) {
 	cfg.BackoffBase = 5 * time.Millisecond
 	cfg.BackoffMaxInterval = 20 * time.Millisecond
 	s, cancel := startScheduler(t, cfg, repo, exec, recorder)
-	waitExec(t, exec, 3, 2*time.Second) // 2 retries + 1 final attempt = 3 executions
+	waitExec(t, exec, 2, 2*time.Second) // max_retries=2 => 2 executions total
 	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
 	cancel()
 	s.Stop()
 
-	if recorder.count() != 3 {
-		t.Fatalf("records = %d, want 3 (one per execution, incl. the final dead)", recorder.count())
+	if recorder.count() != 2 {
+		t.Fatalf("records = %d, want 2 (one per execution, incl. the final dead)", recorder.count())
 	}
 	recs := recorder.snapshot()
 	for i, r := range recs {
@@ -864,7 +864,7 @@ func TestScheduler_RecurringFailure_GoesDead(t *testing.T) {
 	cfg.BackoffBase = 5 * time.Millisecond
 	cfg.BackoffMaxInterval = 20 * time.Millisecond
 	s, cancel := startScheduler(t, cfg, repo, rec)
-	waitExec(t, rec, 3, 2*time.Second) // 2 retries + final = 3 executions
+	waitExec(t, rec, 2, 2*time.Second) // max_retries=2 => 2 executions total
 	waitStatus(t, repo, task.Id, enum.TaskStatusDead, 1*time.Second)
 	cancel()
 	s.Stop()

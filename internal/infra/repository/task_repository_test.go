@@ -204,20 +204,22 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 	repo := NewTaskRepository(db)
 	ctx := context.Background()
 
-	// Seed: scheduled (earlier), scheduled (later), dead -- out of insertion order.
+	// Seed with explicit created_at (s1 oldest, d1 newest) so created_at DESC
+	// ordering is deterministic regardless of insertion timing.
+	base := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
 	s1 := newTask("s1", enum.TaskStatusScheduled)
-	s1.ExecTime = time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	s1.CreatedAt = base
 	s2 := newTask("s2", enum.TaskStatusScheduled)
-	s2.ExecTime = time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+	s2.CreatedAt = base.Add(time.Second)
 	dead := newTask("d1", enum.TaskStatusDead)
-	dead.ExecTime = time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
-	for _, tk := range []*model.Task{dead, s2, s1} {
+	dead.CreatedAt = base.Add(2 * time.Second)
+	for _, tk := range []*model.Task{s1, s2, dead} {
 		if err := db.Create(tk).Error; err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}
 
-	// No filter: all 3 ordered by exec_time asc (s1, s2, d1).
+	// No filter: all 3 ordered by created_at desc (d1, s2, s1).
 	all, err := repo.ListTasks(ctx, TaskFilter{}, 0, 0)
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
@@ -225,8 +227,8 @@ func TestTaskRepository_ListTasks(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("len = %d, want 3", len(all))
 	}
-	if all[0].Id != "s1" || all[1].Id != "s2" || all[2].Id != "d1" {
-		t.Errorf("order = %s,%s,%s, want s1,s2,d1", all[0].Id, all[1].Id, all[2].Id)
+	if all[0].Id != "d1" || all[1].Id != "s2" || all[2].Id != "s1" {
+		t.Errorf("order = %s,%s,%s, want d1,s2,s1 (created_at desc)", all[0].Id, all[1].Id, all[2].Id)
 	}
 
 	// Filter by status=scheduled.
