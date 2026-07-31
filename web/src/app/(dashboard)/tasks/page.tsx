@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -105,16 +105,22 @@ export default function TasksPage() {
   const [pageSize, setPageSize] = useState(20);
   const [createOpen, setCreateOpen] = useState(false);
 
-  let fromRfc: string | undefined;
-  let toRfc: string | undefined;
-  if (timePreset === "1h" || timePreset === "today") {
-    const { start, end } = getPresetTimeRange(timePreset);
-    fromRfc = start.toISOString();
-    toRfc = end.toISOString();
-  } else if (timePreset === "custom") {
-    fromRfc = customStart ? new Date(customStart).toISOString() : undefined;
-    toRfc = customEnd ? new Date(customEnd).toISOString() : undefined;
-  }
+  // Memoized so fromRfc/toRfc stay stable between renders -- getPresetTimeRange
+  // calls new Date(), which would otherwise change every render and make the
+  // react-query queryKey churn (infinite refetch).
+  const { fromRfc, toRfc } = useMemo(() => {
+    if (timePreset === "1h" || timePreset === "today") {
+      const { start, end } = getPresetTimeRange(timePreset);
+      return { fromRfc: start.toISOString(), toRfc: end.toISOString() };
+    }
+    if (timePreset === "custom") {
+      return {
+        fromRfc: customStart ? new Date(customStart).toISOString() : undefined,
+        toRfc: customEnd ? new Date(customEnd).toISOString() : undefined,
+      };
+    }
+    return { fromRfc: undefined, toRfc: undefined };
+  }, [timePreset, customStart, customEnd]);
 
   const { data, isLoading } = useTasks({
     search: search || undefined,
@@ -144,8 +150,13 @@ export default function TasksPage() {
         isLoading={isLoading}
         emptyMessage="No tasks"
         onRowClick={(t) => router.push(`/tasks/${t.id}`)}
+        title={
+          <span className="text-sm font-medium">
+            {total} {total === 1 ? "task" : "tasks"}
+          </span>
+        }
         headerAction={
-          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto [&>*]:shrink-0">
             <div className="flex gap-1">
               {TIME_PRESETS.map((preset) => (
                 <Button
@@ -199,7 +210,7 @@ export default function TasksPage() {
               ))}
             </Select>
             <Input
-              className="max-w-[200px]"
+              className="w-80 shrink-0"
               placeholder="Search name or ref_id..."
               size="sm"
               value={search}
@@ -208,9 +219,6 @@ export default function TasksPage() {
                 setPage(1);
               }}
             />
-            <span className="text-default-400 ml-2 text-sm">
-              {total} {total === 1 ? "task" : "tasks"}
-            </span>
           </div>
         }
         footer={
