@@ -35,7 +35,7 @@ func newGrpcServer(t *testing.T, srv taskdv1.RunnerServer) (addr string, cleanup
 	}
 	gs := grpc.NewServer()
 	taskdv1.RegisterRunnerServer(gs, srv)
-	go gs.Serve(lis)
+	go func() { _ = gs.Serve(lis) }()
 	return lis.Addr().String(), gs.Stop
 }
 

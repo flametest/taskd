@@ -10,7 +10,7 @@ import (
 	"github.com/flametest/vita/verrors"
 	"github.com/flametest/vita/vgorm"
 	log "github.com/flametest/vita/vlog"
-	"github.com/flametest/vita/vtool"
+	"github.com/samber/lo"
 )
 
 type Task struct {
@@ -41,7 +41,7 @@ func NewTask(name, refId string, protocol enum.Protocol, address string, params 
 		Protocol:   protocol,
 		Address:    address,
 		Params:     params,
-		ExecTime:   vtool.Ptr(time.Unix(execTime, 0)),
+		ExecTime:   lo.ToPtr(time.Unix(execTime, 0)),
 		status:     enum.TaskStatusScheduled,
 		Attempts:   0,
 		MaxRetries: maxRetries,
@@ -104,7 +104,7 @@ func NewFromDO(do *model.Task) *Task {
 		Protocol:    do.Protocol,
 		Address:     do.Address,
 		Params:      params,
-		ExecTime:    vtool.Ptr(do.ExecTime),
+		ExecTime:    lo.ToPtr(do.ExecTime),
 		status:      do.Status,
 		Attempts:    do.Attempts,
 		MaxRetries:  do.MaxRetries,

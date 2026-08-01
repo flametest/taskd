@@ -36,7 +36,7 @@ func (e *GrpcExecutor) Execute(ctx context.Context, task *domain.Task) (*Executi
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := taskdv1.NewRunnerClient(conn)
 	ctx, cancel := context.WithTimeout(ctx, e.timeout)

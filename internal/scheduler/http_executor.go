@@ -50,7 +50,7 @@ func (e *HTTPExecutor) Execute(ctx context.Context, task *domain.Task) (*Executi
 	if err != nil {
 		return nil, err // connect / timeout / DNS -> retry, no response captured
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read up to maxResponseBodyLen+1 bytes so truncation is detectable.
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyLen+1))

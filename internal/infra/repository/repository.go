@@ -12,7 +12,6 @@ type Repository interface {
 }
 
 type repositoryImpl struct {
-	db             *gorm.DB
 	taskRepo       TaskRepository
 	taskRecordRepo TaskRecordRepository
 }
@@ -21,10 +20,7 @@ func (r repositoryImpl) GetTaskRepo(tx ...vgorm.Tx) TaskRepository {
 	if len(tx) == 0 || tx[0] == nil {
 		return r.taskRepo
 	}
-	t, ok := tx[0].(vgorm.Tx)
-	if !ok {
-		return r.taskRepo
-	}
+	t := tx[0]
 	return NewTaskRepository(t.DB())
 }
 
@@ -32,10 +28,7 @@ func (r repositoryImpl) GetTaskRecordRepo(tx ...vgorm.Tx) TaskRecordRepository {
 	if len(tx) == 0 || tx[0] == nil {
 		return r.taskRecordRepo
 	}
-	t, ok := tx[0].(vgorm.Tx)
-	if !ok {
-		return r.taskRecordRepo
-	}
+	t := tx[0]
 	return NewTaskRecordRepository(t.DB())
 }
 

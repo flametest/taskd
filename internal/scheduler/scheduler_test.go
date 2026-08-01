@@ -86,12 +86,6 @@ func (f *fakeRepo) MarkSucceeded(ctx context.Context, taskId string) error {
 	return nil
 }
 
-func (f *fakeRepo) succCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.succCalls
-}
-
 // MarkFailure mirrors the repo SQL: increment attempts, store last_error, then
 // either re-schedule (attempts <= max_retries) or mark dead.
 func (f *fakeRepo) MarkFailure(ctx context.Context, taskId string, lastError string, nextExecTime time.Time) (int64, error) {
