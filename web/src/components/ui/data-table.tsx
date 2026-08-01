@@ -39,7 +39,7 @@ export function DataTable<T>({
       {(title || headerAction) && (
         <div className="flex shrink-0 items-center justify-between border-b border-default-200 px-4 py-3">
           <div>{title}</div>
-          <div>{headerAction}</div>
+          <div className="flex min-w-0 flex-1 justify-end pr-22 ">{headerAction}</div>
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">

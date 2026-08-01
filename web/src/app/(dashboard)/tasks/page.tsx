@@ -156,8 +156,8 @@ export default function TasksPage() {
           </span>
         }
         headerAction={
-          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto [&>*]:shrink-0">
-            <div className="flex gap-1">
+          <div className="flex flex-nowrap items-center gap-2">
+            <div className="flex shrink-0 gap-1">
               {TIME_PRESETS.map((preset) => (
                 <Button
                   key={preset.key}
@@ -197,7 +197,7 @@ export default function TasksPage() {
               </>
             )}
             <Select
-              className="max-w-[160px]"
+              className="max-w-[130px] shrink-0"
               size="sm"
               selectedKeys={[status]}
               onChange={(e) => {
